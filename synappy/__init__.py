@@ -3,8 +3,125 @@
 Created on Wed Mar 23 14:51:03 2016
 
 @author: michaellynn
-"""
+"" SynapPy is a rapid data visualization and quantification tool for single-cell electrophysiologists.
 
+
+It takes .abf files as inputs, detects poststim synaptic events, 
+and automatically computes a variety of statistics on them including:
+    .height
+    .height_norm
+    .latency             [by max_height, max_slope, 80_20_line (calcuate epsp foot)]
+    .decay
+    .baseline
+    .failure rate
+
+        
+The raw values are stored as attributes in the synwrapper object
+(eg event_stats.height_norm[neuron] gives arrays of norm heights for each [neuron])
+
+    
+It also intelligently filters out bad data if events are not above 4*SD(baseline),
+or if their decay constant (tau) is nonsensical. These events are masked but kept 
+in the underlying data structure.
+
+
+The main dependencies are: numpy, scipy, matplotlib and neo (ver 0.4+ recommended)
+
+
+
+
+---Typical usage---:
+
+    import synappy as syn
+
+    event1 = syn.load(['15d20004.abf', '15d20007.abf', '15d20020.abf'])
+     
+            #Give a list of filenames as first argument
+            #can also specify trial ranges [default:all], input channels [default:first]
+            #stim channels [default:last] and a downsampling ratio for analog signals [default:2] 
+            #(this last property to help with rapid analysis)
+     
+     
+    event1.add_all(event_direction = 'down', latency_method = 'max_slope') 
+    
+            #automatically adds all relevant stats. Many options here to change stat properties.
+            #Note: includes filtering out of unclamped aps; and filtering out of events with nonsensical decay 
+    
+    
+    event1.height_norm[neuron]
+    
+            #fetch normalized height stats for that neuron. dim0 = trials, dim1 = stims.
+            #The raw data behind each attribute can be fetched this way.
+
+
+
+---Plotting tools---:
+
+    event1.plot('height')  
+    
+            #main data visualization tool. Plots event attribute.  
+            #Makes a separate figure for each neuron, then plots stim_num on x-axis and attribute on y-axis.
+            #plots are color-coded (blue are early trials, red are late trials, grey are fails)
+    
+    
+    event1.plot_corr('height, 'decay')
+    
+            #plots correlation between two attributes within event1.
+            #same format/coloring as event1.plot.
+    
+    
+    syn.plot_events(event1.attribute, event2.attribute)
+    
+            #compare attributes from two data groups (different conditions, cell types, etc.)
+    
+    
+    syn.plot_statwrappers(stat1, stat2, ind = 0, err_ind = 2)
+    
+            #compare statfiles on two events, and can also give dim1indices of statfiles to plot.
+            #eg to plot means +-sterr, syn.plot_statwrappers(stat1, stat2, ind = 0, err_ind = 2)
+    
+
+
+---Useful built-in general functions---:
+
+    syn.pool(event_1.attribute)
+    
+        #Pools this attribute over [stims, :]
+    
+    
+    syn.get_stats(event_1.attribute, byneuron = False)
+    
+        #Gets statistics for this attribute over stimtrain (out[stim,:]) or neuron if byneuron is True (out[neuron,:])
+        #dim2: 1->mean, 2->std, 3->sterr, 4->success_rate_mean, 5->success_rate_stdev
+        #eg if byneuron = True, out[neuron, 3] would give sterr for that neuron, calculated by pooling across all trials/stims.
+    
+
+---Useful methods on the synwrapper class---:
+    synwrapper.propagate_mask(): propagate synwrapper.mask through to all other attributes.
+    synwrapper.add_heights() adds .height and .latency
+    synwrapper.add_sorting() adds .mask and sorts [.height, .latency]
+    synwrapper.add_invertedsort() adds .height_fails
+    synwrapper.add_normalized() adds .height_norm
+    synwrapper.add_decay() adds .decay
+    synwrapper.remove_unclamped_aps() identifies events higher than 5x (default) amp.
+                                    It updates the .mask with this information, and then .propagate_mask()
+    
+    synwrapper.add_all() is a general tool to load all stats.
+   
+   
+   
+   
+~~~~~~~Data filtering and manipulation~~~~~~
+    
+Data is automatically filtered in two ways:
+    1) height for each event must be above 4*std(baseline) for that trial.
+    2) decays must not be nonsensical (tau > 0, tau not way larger than rest of set)
+        - This decay-based mask update can be turned off during synwrapper.add_decay()
+    
+    Success/fail filter is stored in a global synwrapper.mask attribute 
+    that can be propagated to all other attributes via the synwrapper.propagate_mask() method.
+
+"""
 
 import neo
 import numpy as np
@@ -16,19 +133,8 @@ import matplotlib.pyplot as plt
 
 
 
-def find_last(arr, tofind = 1):
-    for ind, n in enumerate(reversed(arr)):
-        if n == tofind or ind == len(arr) - 1:
-            return (len(arr) - ind)
-
-#def jacob_exp(pars, x, y, monoexp_normalized_plusb):
-#    deriv = np.empty([len(x), 2])
-#    deriv[:, 0] = -1 * x * np.exp(-1 * pars[0] * x)
-#    deriv[:, 1] = 1 * np.ones(len(x))
-#    
-#    return deriv
-
-class psewrapper(object):
+###Define synwrapper: A wrapper for synaptic event attributes (eg height, latency) from one dataset.
+class synwrapper(object):
     def __init__(self):
         pass
     
@@ -638,7 +744,7 @@ class psewrapper(object):
                 if lastind < self.decay[neuron].shape[2]:
                     self.decay[neuron].mask[:, :, lastind] = mask[neuron]
                     
-    def remove_unclamped_aps(self):
+    def remove_unclamped_aps(self, thresh_ratio = 5):
         height_norm = self.height_norm
         height = self.height
         latency = self.latency
@@ -646,7 +752,7 @@ class psewrapper(object):
         num_neurons = len(height_norm)
         
         for neuron in range(num_neurons):
-            to_replace = np.argwhere(height_norm[neuron][:,:,0] > 5)
+            to_replace = np.argwhere(height_norm[neuron][:,:,0] > thresh_ratio)
 
             height_norm[neuron][to_replace[:, 0], to_replace[:, 1] ,:] = np.nan
             height_norm[neuron].mask[to_replace[:, 0], to_replace[:, 1] ,:] = True
@@ -708,7 +814,6 @@ class psewrapper(object):
             for trial in range(num_trials):
                 for stim in range(num_stims):
                     
-     #               [popt, pcov] = sp_opt.curve_fit(exp_normalized, times[neuron][0:poststim_ind], postsynaptic_curve_normalized) #p0 = [100, postsynaptic_events[neuron][trial,stim,0]]) #0.5*postsynaptic_events[neuron][trial,stim,0]])
                     if type(postsynaptic_events[neuron]) is np.ma.core.MaskedArray and  postsynaptic_events[neuron][trial, stim, 0] is not np.ma.masked: 
                         event_ind_min = postsynaptic_events[neuron][trial,stim,1] - prestim      
                         event_ind_max = event_ind_min + poststim_ind
@@ -742,7 +847,7 @@ class psewrapper(object):
                             [popt, pcov] = sp_opt.curve_fit(monoexp_normalized_plusb, times_forfit, postsynaptic_curve, p0 = vars_guess) #, Dfun = jacob_exp)#, maxfev = 250) #p0 = [100, postsynaptic_events[neuron][trial,stim,0]]) #0.5*postsynaptic_events[neuron][trial,stim,0]])
                         except RuntimeError:
                             popt = np.ones(num_vars) * 10000
-                            pcov = 10000
+                            #pcov = 10000
 
                             
                         fitted_vars[neuron][trial,stim, :] = popt[:]
@@ -758,7 +863,6 @@ class psewrapper(object):
                   
             #convert from lambda to tau
             fitted_ones = np.ones([fitted_vars[neuron][:,:,0].shape[0], fitted_vars[neuron][:,:,0].shape[1]])
-     #       fitted_vars[neuron][:,:,0] = fitted_ones / fitted_vars[neuron][:,:,0]
             
             if type(postsynaptic_events[neuron]) is np.ma.core.MaskedArray:
                 fitted_vars[neuron][:,:,0] = fitted_ones / np.array(fitted_vars[neuron][:,:,0])
@@ -780,10 +884,8 @@ class psewrapper(object):
             self.propagate_mask()
             print('\n\nAdded round2 of succ/fail sorting to: \n\theight \n\theight_norm, \n\tlatency, \n\tbaseline')              
 
-                    
         return
-        
-        
+                
         
     def add_all(self, event_direction = 'down', latency_method = 'max_height', ap_filter = True, sort_thresh = False, keep_above = False, delay_mask_update = True, upper_search = 30):
         self.add_heights(event_direction = event_direction, latency_method = latency_method, PSE_search_upper = upper_search)
@@ -797,8 +899,9 @@ class psewrapper(object):
         
         
         
-
-def ephys_find_stims(stim_signals):
+### ---- synappy functions ----
+###     core functionality is syn.find_stims and syn.load.
+def find_stims(stim_signals):
     num_neurons = len(stim_signals)
     stim_on = np.empty(num_neurons, dtype = np.ndarray)
     
@@ -816,7 +919,7 @@ def ephys_find_stims(stim_signals):
 
     return (stim_on)
     
-def load_ephys(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2):    
+def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2):    
     print('\n\n----New Group---')
 
     num_neurons = len(files)
@@ -861,14 +964,14 @@ def load_ephys(files, trials = None, input_channel = None, stim_channel = None, 
             analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:], downsampling_ratio)
 
     #Find stim onsets
-    stim_on = ephys_find_stims(stim_signals)
+    stim_on = find_stims(stim_signals)
     for neuron in range(num_neurons):        
         stim_on[neuron] /= downsampling_ratio
         stim_on[neuron] = np.int32(stim_on[neuron])
     
     #str_name = 'postsynaptic_events_' + name
     
-    synaptic_wrapper = psewrapper()
+    synaptic_wrapper = synwrapper()
     synaptic_wrapper.analog_signals = analog_signals
     synaptic_wrapper.stim_on = stim_on
     synaptic_wrapper.times = times
@@ -878,125 +981,31 @@ def load_ephys(files, trials = None, input_channel = None, stim_channel = None, 
     
     return (synaptic_wrapper)
 				
-    
-    
-def ep_sortfails(synaptic_wrapper, thresh = False):
-    postsynaptic_event = synaptic_wrapper.postsynaptics_size
-    postsynaptic_event_latency = synaptic_wrapper.postsynaptics_latency
-    baseline = synaptic_wrapper.postsynaptics_baseline
-    
-    num_neurons = len(postsynaptic_event)
-    
-    synaptic_wrapper.mask = np.empty(num_neurons, dtype = np.ndarray)
 
-          
-    postsynaptic_event_successes = np.empty(num_neurons, dtype = np.ndarray)
-    postsynaptic_event_latency_successes = np.empty(num_neurons, dtype = np.ndarray)   
-    
-    dynamic_thresholding = False
-    if thresh == False:
-        dynamic_thresholding = True
-    
-    for neuron in range(num_neurons):
-        postsynaptic_event_successes[neuron] = np.ma.array(np.copy(postsynaptic_event[neuron]))
-        postsynaptic_event_latency_successes[neuron] = np.ma.array(np.copy(postsynaptic_event_latency[neuron]))
+### ---- Other useful functions ----
 
-        height_tocompare = np.abs(postsynaptic_event[neuron][:, :, 0])
-        
-        if dynamic_thresholding == True:
-            thresh_tocompare = 4 * baseline[neuron][:,:,1]
-        else:
-            thresh_tocompare = thresh * np.ones_like(thresh_tocompare)
-            
-        diff_tocompare = height_tocompare - thresh_tocompare        
-        mask_tocompare = diff_tocompare < 0 
-        
-        mask_tocompare_full_pes = np.ma.empty([mask_tocompare.shape[0], mask_tocompare.shape[1], postsynaptic_event[neuron].shape[2]])
-        for shape_3d in range(postsynaptic_event[neuron].shape[2]):
-            mask_tocompare_full_pes[:,:,shape_3d] = mask_tocompare
-            
-        mask_tocompare_full_lat = np.ma.empty([mask_tocompare.shape[0], mask_tocompare.shape[1], postsynaptic_event_latency[neuron].shape[2]])
-        for shape_3d in range(postsynaptic_event_latency[neuron].shape[2]):
-            mask_tocompare_full_lat[:,:,shape_3d] = mask_tocompare
-            
-                
-        postsynaptic_event_successes[neuron].mask = mask_tocompare_full_pes
-        postsynaptic_event_latency_successes[neuron].mask = mask_tocompare_full_lat
-        
-        synaptic_wrapper.postsynaptics_size[neuron] = np.ma.masked_array(synaptic_wrapper.postsynaptics_size[neuron], mask = mask_tocompare_full_pes)
-        synaptic_wrapper.postsynaptics_latency[neuron] = np.ma.masked_array(synaptic_wrapper.postsynaptics_latency[neuron], mask = mask_tocompare_full_pes[:,:,0:2])
-        synaptic_wrapper.mask[neuron] = mask_tocompare_full_pes
-                                                                                                   
-    return (synaptic_wrapper)
+#Find last index in an array which has value of tofind.
+def find_last(arr, tofind = 1):
+    for ind, n in enumerate(reversed(arr)):
+        if n == tofind or ind == len(arr) - 1:
+            return (len(arr) - ind)
 
- 
-def ep_invertsort(synaptic_wrapper):
-    postsynaptic_event_successes = postsynaptics_size.postsynaptics
-    num_neurons = len(postsynaptic_event_successes)
-    
-    synaptic_wrapper.postsynaptics_size_fails = np.empty(num_neurons, dtype = np.ndarray)
+#def jacob_exp(pars, x, y, monoexp_normalized_plusb):
+#    deriv = np.empty([len(x), 2])
+#    deriv[:, 0] = -1 * x * np.exp(-1 * pars[0] * x)
+#    deriv[:, 1] = 1 * np.ones(len(x))
+#    return deriv
 
-    
-    postsynaptic_event_failures = np.empty(num_neurons, dtype = np.ndarray)
-    
-    for neuron in range(num_neurons):
-        success_mask = np.ma.getmask(postsynaptic_event_successes[neuron])
-        failure_mask = np.logical_not(success_mask)
-            
-        postsynaptic_event_failures[neuron] = np.ma.array(np.copy(postsynaptic_event_successes[neuron]), mask = failure_mask)
-        synaptic_wrapper.postsynaptics_size_fails[neuron] = np.ma.array(np.copy(postsynaptic_event_successes[neuron]), mask = failure_mask)
 
-    return (postsynaptic_event_failures)
-    
 
-#def ephys_all_sucfail(postsynaptic_event_successes):
-#    num_neurons = len(postsynaptic_event_successes)
-#    
-#    postsynaptic_event = np.empty(num_neurons, dtype = np.ndarray)
-#    
-#    for neuron in range(num_neurons):
-#        postsynaptic_event[neuron] = np.array(np.copy(postsynaptic_event_successes[neuron]))
-#
-#    return (postsynaptic_event)
-#    
-#
-#        
-#def ep_normalize(postsynaptic_event):
-#     
-#     num_neurons = len(postsynaptic_event)
-#     
-#     postsynaptic_event_normalized = np.empty(num_neurons, dtype = np.ndarray)
-#     synaptic_wrapper.postsynaptics_norm_size = np.empty(num_neurons, dtype = np.ndarray)
-#     avg_ampl = np.empty(num_neurons)
-#     
-#     for neuron in range(num_neurons):
-#         postsynaptic_event_normalized[neuron] = np.ma.copy(postsynaptic_event[neuron])
-#         synaptic_wrapper.postsynaptics_norm_size[neuron] = np.ma.copy(postsynaptic_event[neuron])
-#
-#         avg_ampl = np.mean(postsynaptic_event[neuron][:,0,0])         
-#         
-#         if type(postsynaptic_event[neuron]) is np.ma.core.MaskedArray:
-#             current_neuron_mask = postsynaptic_event[neuron][:,:,0].mask
-#         
-#             postsynaptic_event_normalized_temp = np.array(postsynaptic_event[neuron][:,:,0]) / avg_ampl
-#             postsynaptic_event_normalized[neuron][:,:,0] = np.ma.array(postsynaptic_event_normalized_temp, mask = current_neuron_mask)
-#         else:
-#             postsynaptic_event_normalized[neuron][:,:,0] /= avg_ampl
-#
-#         synaptic_wrapper.postsynaptics_norm_size[neuron] = postsynaptic_event_normalized[neuron]
-#
-#
-#     return (synaptic_wrapper)
-#     
-
-def ep_pool(synaptic_wrapper_attribute, pool_index = 0):
+#syn.pool takes an attribute and pools it across stims: out[stim,:]
+def pool(synaptic_wrapper_attribute, pool_index = 0):
     #Returns a stim x m matrix where stim is stim-num and [stim,:] is raw data for that n across all neurons, trials
           
     postsynaptic_event = synaptic_wrapper_attribute
     num_neurons = len(postsynaptic_event)
     
      #Calculate min stims:
-      
     common_stims = 10000
     for neuron in range(num_neurons):
         if common_stims > postsynaptic_event[neuron][:,:,:].shape[1] :
@@ -1011,21 +1020,23 @@ def ep_pool(synaptic_wrapper_attribute, pool_index = 0):
     return stimpooled_postsynaptic_events
     
     
-def ep_sucrate_event(postsynaptic_event, byneuron = False):
-    num_neurons = len(postsynaptic_event)
+#syn.get_sucrate takes an attribute and returns success rate stats over the stim train
+    #out[stim,0] = mean. out[stim,1] is stdev. out[stim,2] is sterr.
+def get_sucrate(synaptic_wrapper_attribute, byneuron = False):
+    num_neurons = len(synaptic_wrapper_attribute)
     
     #Calculate min stims:
     common_stims = 10000
     for neuron in range(num_neurons):
-        if common_stims > len(postsynaptic_event[neuron][0,:,0]):
-            common_stims = len(postsynaptic_event[neuron][0,:,0])
+        if common_stims > len(synaptic_wrapper_attribute[neuron][0,:,0]):
+            common_stims = len(synaptic_wrapper_attribute[neuron][0,:,0])
 
     success_rate_neur = np.zeros([common_stims, num_neurons])
     success_rate = np.zeros([common_stims, 3])    
 
     for neuron in range(num_neurons):
-        count_fails_temp = np.sum(postsynaptic_event[neuron].mask[:,0:common_stims,0], axis = 0)   
-        count_total_temp = postsynaptic_event[neuron].mask.shape[0]
+        count_fails_temp = np.sum(synaptic_wrapper_attribute[neuron].mask[:,0:common_stims,0], axis = 0)   
+        count_total_temp = synaptic_wrapper_attribute[neuron].mask.shape[0]
         success_rate_neur[:, neuron] = (count_total_temp - count_fails_temp) / count_total_temp
     
     success_rate[:,0] = np.mean(success_rate_neur, axis = 1)
@@ -1040,18 +1051,19 @@ def ep_sucrate_event(postsynaptic_event, byneuron = False):
     return success_rate
 
     
-
-###Define function ephys_summarystats which takes a postsynaptic event and outputs (mean, sd, sterr, numevents)
-def ep_stats(synaptic_wrapper_attribute, pooling_index = 0, byneuron = False):
-    #If byneuron = False: ep_stats returns a (stim x 5) array where stim is the stim number and [stim,0:4] is mean, std, sterr, mean success_rate, std success_rate.
-    #If byneuron = True: ep_stats returns a (neur x 3) array where neur is the neuron number and [neur,0:2] is mean, std, median.
+###syn.get_sucrate takes an attribute and returns general stats over dim0 = stim# (or dim0 = neuron# if byneuron is True)
+    #out[:,0] = mean. out[:,1] is stdev. out[:,2] is sterr. . out[:,3] is success_rate mean. out[:,4] is success_rate stdev
+    
+def get_stats(synaptic_wrapper_attribute, pooling_index = 0, byneuron = False):
+    #If byneuron = False: get_stats returns a (stim x 5) array where stim is the stim number and [stim,0:4] is mean, std, sterr, mean success_rate, std success_rate.
+    #If byneuron = True: get_stats returns a (neur x 3) array where neur is the neuron number and [neur,0:2] is mean, std, median.
     
     postsynaptic_event = synaptic_wrapper_attribute
     
     if byneuron is False:
-        stimpooled_postsynaptic_events = ep_pool(postsynaptic_event, pooling_index)   
+        stimpooled_postsynaptic_events = pool(postsynaptic_event, pooling_index)   
         if type(postsynaptic_event[0]) is np.ma.core.MaskedArray:
-            success_rate = ep_sucrate_event(postsynaptic_event)   
+            success_rate = get_sucrate(postsynaptic_event)   
             num_stims = len(stimpooled_postsynaptic_events)
             stats_postsynaptic_events = np.zeros([num_stims, 5])
             
@@ -1132,47 +1144,14 @@ def get_median_filtered(signal, threshold=3):
  
 
     
+###----- Advanced plotting tools to compare groups of recordings ----
     
-#def ephys_graph_neurons(postsynaptic_events_1, name_1 = 'Group 1',
-#                          vm = ' ', yax = False, main_plot_ind = 0, err_plot_ind = 2, ylim = False,
-#                          by_neuron = False, graph_index = 0):
-#    num_neurons = len(postsynaptic_events_1)
-#
-#    
-#        
-#    if yax  is False:
-#        yax = 'Normalized current amplitude'
-#
-#    for neuron in range(num_neurons):
-#        x_1 = range(1, len(postsynaptic_events_1[neuron][0,:,0]) + 1)
-#        num_trials = len(postsynaptic_events_1[neuron][:,0,0])
-#    
-#        plt.figure()
-#        plt.hold(True)
-#        for trial in range(num_trials):
-#            ratio_thistrial = trial / num_trials
-#            red_thistrial = 1 / (1 + np.exp( -5 * (ratio_thistrial - 0.5)))
-#            color_thistrial = [red_thistrial, 0.2, 1 - red_thistrial]
-#            #print('\n\nneuron:', neuron, '\ntrial: ', trial, '\ncolor: ', color_thistrial)
-#            if type(postsynaptic_events_1[neuron]) is np.ma.core.MaskedArray:             
-#                plt.plot(x_1, postsynaptic_events_1[neuron][trial,:,graph_index].filled(np.nan),'.', color = color_thistrial)
-#                ma = postsynaptic_events_1[neuron][trial,:,graph_index].mask
-#                inv_ma = np.logical_not(ma)
-#                new_pse = np.ma.array(np.array(postsynaptic_events_1[neuron][trial,:,graph_index]), mask = inv_ma)
-#                plt.plot(x_1, new_pse.filled(np.nan),'.', color = '0.6')
-#            else: 
-#                plt.plot(x_1, postsynaptic_events_1[neuron][trial,:,graph_index],'.', color = color_thistrial)
-#                
-#        
-#        plt.xlabel('Stimulation number (' + vm + ')')
-#        plt.ylabel(yax)
-#        if ylim is not False:
-#            plt.ylim(ylim)
-#        #name = name_5ht + '_' + name_gaba + '_' name_freq + '.jpg'
-#        name = 'stimtrain_' + name_1 + '_' + '_' + vm + '.jpg'
-#        plt.hold(False)
-        
-def ep_graph_events(postsynaptic_events_1, postsynaptic_events_2, name1 = 'Group 1', name2 = 'Group 2', 
+    #plot_events compares two synwrapper attributes (eg group1.height, group2.height)
+    
+    #plot_statwrapper compares two stat files on attributes. For ex, to plot means +- standard error:
+    #stat1 = syn.get_stats(group1.height), stat2 = syn.get_stats(group2.height), syn.plot_statwrapper(stat1, stat2, ind = 0, err_ind = 2)
+    
+def plot_events(postsynaptic_events_1, postsynaptic_events_2, name1 = 'Group 1', name2 = 'Group 2', 
                           hz = ' ', ylabel = False, ind = 0, err_ind = 1, ylimmin = True,
                           by_neuron = False, pool = False):
                               
@@ -1180,8 +1159,8 @@ def ep_graph_events(postsynaptic_events_1, postsynaptic_events_2, name1 = 'Group
         hz = str(hz)
                               
                               
-    stats_postsynaptic_events_1 = ep_stats(postsynaptic_events_1)
-    stats_postsynaptic_events_2 = ep_stats(postsynaptic_events_2)
+    stats_postsynaptic_events_1 = get_stats(postsynaptic_events_1)
+    stats_postsynaptic_events_2 = get_stats(postsynaptic_events_2)
     
 #    if pool is False:
     
@@ -1221,7 +1200,7 @@ def ep_graph_events(postsynaptic_events_1, postsynaptic_events_2, name1 = 'Group
 
 
     
-def ep_graph_stats(stats_postsynaptic_events_1, stats_postsynaptic_events_2, name1 = 'Group 1', name2 = 'Group 2', 
+def plot_statwrappers(stats_postsynaptic_events_1, stats_postsynaptic_events_2, name1 = 'Group 1', name2 = 'Group 2', 
                           hz = ' ', ylabel = False, xlabel = False, ind = 0, err_ind = 1, ylimmin = False,
                           by_neuron = False, save = True):
                               
