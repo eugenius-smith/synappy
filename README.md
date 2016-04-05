@@ -94,13 +94,14 @@ The main dependencies are: numpy, scipy, matplotlib and neo (ver 0.4+ recommende
     
 
 ---Useful methods on the synwrapper class---:
-    synwrapper.propagate_mask(): propagate synwrapper.mask through to all other attributes.
-    synwrapper.add_heights() adds .height and .latency
-    synwrapper.add_sorting() adds .mask and sorts [.height, .latency]
-    synwrapper.add_invertedsort() adds .height_fails
-    synwrapper.add_normalized() adds .height_norm
-    synwrapper.add_decay() adds .decay
-    synwrapper.remove_unclamped_aps() identifies events higher than 5x (default) amp.
+
+    synwrapper.propagate_mask(): #propagate synwrapper.mask through to all other attributes.
+    synwrapper.add_heights() #adds .height and .latency
+    synwrapper.add_sorting() #adds .mask and sorts [.height, .latency]
+    synwrapper.add_invertedsort() #adds .height_fails
+    synwrapper.add_normalized() #adds .height_norm
+    synwrapper.add_decay() #adds .decay
+    synwrapper.remove_unclamped_aps() #identifies events higher than 5x (default) amp.
                                     It updates the .mask with this information, and then .propagate_mask()
     
     synwrapper.add_all() is a general tool to load all stats.
@@ -115,6 +116,6 @@ Data is automatically filtered in two ways:
     2) decays must not be nonsensical (tau > 0, tau not way larger than rest of set)
         - This decay-based mask update can be turned off during synwrapper.add_decay()
     
-    Success/fail filter is stored in a global synwrapper.mask attribute 
+    The Success/fail filter is stored in a global synwrapper.mask attribute 
     that can be propagated to all other attributes via the synwrapper.propagate_mask() method.
 
