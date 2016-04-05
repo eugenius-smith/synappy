@@ -852,6 +852,7 @@ class synwrapper(object):
                             
                         fitted_vars[neuron][trial,stim, :] = popt[:]
                         
+                        
             if plotting is True:
                                 
                 postsynaptic_curve = analog_signals[neuron][0, postsynaptic_events[neuron][0,0,1] - prestim : postsynaptic_events[neuron][0,0,1] + poststim_ind] - baseline[neuron][0, 0, 0]
