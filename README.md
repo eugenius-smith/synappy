@@ -27,6 +27,7 @@ The main dependencies are: numpy, scipy, matplotlib and neo (ver 0.4+ recommende
 
 
 
+
 ---Typical usage---:
 
     import synappy as syn
