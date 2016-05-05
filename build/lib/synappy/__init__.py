@@ -920,7 +920,7 @@ def find_stims(stim_signals, thresh):
 
     return (stim_on)
     
-def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2, stim_thresh = 3):    
+def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2, stim_thresh):    
     print('\n\n----New Group---')
 
     num_neurons = len(files)
