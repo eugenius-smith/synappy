@@ -902,7 +902,7 @@ class synwrapper(object):
         
 ### ---- synappy functions ----
 ###     core functionality is syn.find_stims and syn.load.
-def find_stims(stim_signals):
+def find_stims(stim_signals, thresh):
     num_neurons = len(stim_signals)
     stim_on = np.empty(num_neurons, dtype = np.ndarray)
     
@@ -911,7 +911,7 @@ def find_stims(stim_signals):
     #Store in light_on(a): a>trial number, light_on_ind(a)>time index of light-on for that trial
     for neuron in range(num_neurons):
         stim_on[neuron] = np.zeros(1)
-        all_crossings = np.where(stim_signals[neuron]>3)[0]        
+        all_crossings = np.where(stim_signals[neuron] > thresh)[0]        
         stim_on[neuron][0] = all_crossings[0]
         
         for crossing_ind in np.arange(1,len(all_crossings)):
@@ -920,7 +920,7 @@ def find_stims(stim_signals):
 
     return (stim_on)
     
-def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2):    
+def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2, stim_thresh):    
     print('\n\n----New Group---')
 
     num_neurons = len(files)
@@ -965,7 +965,7 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
             analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:], downsampling_ratio)
 
     #Find stim onsets
-    stim_on = find_stims(stim_signals)
+    stim_on = find_stims(stim_signals, stim_thresh)
     for neuron in range(num_neurons):        
         stim_on[neuron] /= downsampling_ratio
         stim_on[neuron] = np.int32(stim_on[neuron])
