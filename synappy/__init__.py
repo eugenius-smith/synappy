@@ -302,7 +302,7 @@ class synwrapper(object):
             sample_rate = np.int32(np.round(1 / (times[neuron][1] - times[neuron][0])))   
             if smoothing_width == False:
                 smoothing_width = 2
-                smoothing_width_ind = (smoothing_width * sample_rate / 1000) + 1
+                smoothing_width_ind = np.int32(smoothing_width * sample_rate / 1000) + 1
             else:
                 smoothing_width_ind = np.int32(smoothing_width * (sample_rate / 1000)) + 1
     
@@ -962,7 +962,7 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
 
        
         for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0]-1:trials[neuron][1]-1]):
-            analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:], downsampling_ratio, zero_phase = True).squeeze()
+            analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:], int(downsampling_ratio), zero_phase = True).squeeze()
 
     #Find stim onsets
     stim_on = find_stims(stim_signals, stim_thresh)
