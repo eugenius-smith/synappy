@@ -115,7 +115,7 @@ The main dependencies are: numpy, scipy, matplotlib and neo (ver 0.4+ recommende
     
 Data is automatically filtered in two ways:
     1) height for each event must be above 4*std(baseline) for that trial.
-    2) decays must not be nonsensical (tau > 0, tau not way larger than rest of set)
+    2) decays must not be nonsensical (tau > 0, tau not far larger than rest of set)
         - This decay-based mask update can be turned off during synwrapper.add_decay()
     
     Success/fail filter is stored in a global synwrapper.mask attribute 
@@ -376,22 +376,22 @@ class synwrapper(object):
             
                     #Based on latency_method, determine latency and store in postsynaptic_event_latency
                     if latency_method == 'max_height': 
-                        event_time_index = postsynaptic_event[neuron][trial, stim, 1]
-                        stim_time_index = stim_on[neuron][stim]
+                        event_time_index = np.int32(postsynaptic_event[neuron][trial, stim, 1])
+                        stim_time_index = np.int32(stim_on[neuron][stim])
                         
                         postsynaptic_event_latency[neuron][trial, stim,0] =  times[neuron][event_time_index] - times[neuron][stim_time_index]
                         postsynaptic_event_latency[neuron][trial, stim,1] = postsynaptic_event[neuron][trial, stim, 1]
             
                     elif latency_method == 'max_slope':     
                         event_time_index = np.int32(max_deriv_ind + PSE_search_lower_thistrial)
-                        stim_time_index = stim_on[neuron][stim]
+                        stim_time_index = np.int32(stim_on[neuron][stim])
             
                         postsynaptic_event_latency[neuron][trial, stim, 0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
                         postsynaptic_event_latency[neuron][trial, stim, 1] = event_time_index                  
                         
                     elif latency_method == 'baseline_plus_4sd':                 
                         signal_base_diff = ((analog_smoothed[trial,0:max_height_smoothed_ind] - (baseline[neuron][trial, stim, 0] + 4 * baseline[neuron][trial, stim, 1])) ** 2 ) > 0
-                        signal_base_min_ind = find_last(signal_base_diff, tofind = 0)
+                        signal_base_min_ind = inifind_last(signal_base_diff, tofind = 0)
                         postsynaptic_event_latency[neuron][trial, stim,0] = times[neuron][signal_base_min_ind + PSE_search_lower_index]
                         postsynaptic_event_latency[neuron][trial, stim,1] = signal_base_min_ind + PSE_search_lower_index
                               
@@ -1071,9 +1071,9 @@ def get_stats(synaptic_wrapper_attribute, pooling_index = 0, byneuron = False):
             for stim in range(num_stims):
                 num_nonmasked_stims = len(stimpooled_postsynaptic_events[stim,:]) - np.ma.count_masked(stimpooled_postsynaptic_events[stim,:])        
                 
-                stats_postsynaptic_events[stim,0] = np.mean(stimpooled_postsynaptic_events[stim, :])
-                stats_postsynaptic_events[stim,1] = np.std(stimpooled_postsynaptic_events[stim, :])
-                stats_postsynaptic_events[stim,2] = np.std(stimpooled_postsynaptic_events[stim, :]) / np.sqrt(num_nonmasked_stims)
+                stats_postsynaptic_events[stim,0] = np.mean(stimpooled_postsynaptic_events[stim, :].astype(np.float64))
+                stats_postsynaptic_events[stim,1] = np.std(stimpooled_postsynaptic_events[stim, :].astype(np.float64))
+                stats_postsynaptic_events[stim,2] = np.std(stimpooled_postsynaptic_events[stim, :].astype(np.float64)) / np.sqrt(num_nonmasked_stims)
                 stats_postsynaptic_events[stim,3] = success_rate[stim, 0]
                 stats_postsynaptic_events[stim,4] = success_rate[stim, 1]
         else:
@@ -1084,8 +1084,8 @@ def get_stats(synaptic_wrapper_attribute, pooling_index = 0, byneuron = False):
                 num_nonmasked_stims = len(stimpooled_postsynaptic_events[stim,:]) - np.ma.count_masked(stimpooled_postsynaptic_events[stim,:])        
                 
                 stats_postsynaptic_events[stim,0] = np.mean(stimpooled_postsynaptic_events[stim, :])
-                stats_postsynaptic_events[stim,1] = np.std(stimpooled_postsynaptic_events[stim, :])
-                stats_postsynaptic_events[stim,2] = np.std(stimpooled_postsynaptic_events[stim, :]) / np.sqrt(num_nonmasked_stims)
+                stats_postsynaptic_events[stim,1] = np.std(stimpooled_postsynaptic_events[stim, :].astype(np.float64))
+                stats_postsynaptic_events[stim,2] = np.std(stimpooled_postsynaptic_events[stim, :].astype(np.float64)) / np.sqrt(num_nonmasked_stims)
     
     elif byneuron is True:
         num_neurons = len(postsynaptic_event)
@@ -1093,8 +1093,8 @@ def get_stats(synaptic_wrapper_attribute, pooling_index = 0, byneuron = False):
         
         for neuron in range(num_neurons):
             stats_postsynaptic_events[neuron,0] = np.mean(postsynaptic_event[neuron][:, :, pooling_index].flatten())
-            stats_postsynaptic_events[neuron,1] = np.std(postsynaptic_event[neuron][:, :, pooling_index].flatten())
-            stats_postsynaptic_events[neuron,2] = np.median(np.ma.compressed(postsynaptic_event[neuron][:, :, pooling_index].flatten()))
+            stats_postsynaptic_events[neuron,1] = np.std(postsynaptic_event[neuron][:, :, pooling_index].flatten().astype(np.float64))
+            stats_postsynaptic_events[neuron,2] = np.median(np.ma.compressed(postsynaptic_event[neuron][:, :, pooling_index].flatten().astype(np.float64)))
             
             
         
@@ -1127,11 +1127,11 @@ def get_median_filtered(signal, threshold=3):
             s = 0
         else:
             s = difference / float(median_difference)
-        mask = s > threshold
+        mask = np.int32(s > threshold)
         signal[mask] = np.median(signal)
         
-        mask = s > threshold
-        mask_2 = signal < 0 
+        mask = np.int32(s > threshold)
+        mask_2 = np.int32(signal < 0)
         signal[mask] = 0
         signal[mask_2] = 0
         
