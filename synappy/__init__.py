@@ -962,7 +962,7 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
 
        
         for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0]-1:trials[neuron][1]-1]):
-            analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:], int(downsampling_ratio), zero_phase = False).squeeze()
+            analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze(), int(downsampling_ratio), zero_phase = True)
 
     #Find stim onsets
     stim_on = find_stims(stim_signals, stim_thresh)
