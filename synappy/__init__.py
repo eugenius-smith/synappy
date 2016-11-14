@@ -955,7 +955,7 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
         numtimes_full = len(block[neuron].segments[0].analogsignals[0].times)  
         numtimes_wanted =  np.int32(numtimes_full /  downsampling_ratio)
 
-        times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0], block[neuron].segments[0].analogsignals[0].times[-1], num = numtimes_wanted)
+        times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0].magnitude, block[neuron].segments[0].analogsignals[0].times[-1].magnitude, num = numtimes_wanted)
             
         analog_signals[neuron] = np.empty((num_trials, numtimes_wanted))
         stim_signals[neuron] = block[neuron].segments[0].analogsignals[np.int8(stim_channel[neuron])][:]        
