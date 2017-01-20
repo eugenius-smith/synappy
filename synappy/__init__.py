@@ -920,7 +920,7 @@ def find_stims(stim_signals, thresh):
 
     return (stim_on)
     
-def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 2, stim_thresh = 3):    
+def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 1, stim_thresh = 3):    
     print('\n\n----New Group---')
 
     num_neurons = len(files)
@@ -953,7 +953,8 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
     for neuron in range(num_neurons):
         num_trials = trials[neuron][1] -  trials[neuron][0]
         numtimes_full = len(block[neuron].segments[0].analogsignals[0].times)  
-        numtimes_wanted =  np.int32(numtimes_full /  downsampling_ratio)
+        #numtimes_wanted =  np.int32(numtimes_full /  downsampling_ratio)
+        numtimes_wanted = numtimes_full
 
         times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0].magnitude, block[neuron].segments[0].analogsignals[0].times[-1].magnitude, num = numtimes_wanted)
             
@@ -962,12 +963,15 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
 
        
         for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0]-1:trials[neuron][1]-1]):
-            analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze(), int(downsampling_ratio), zero_phase = True)
+#            if downsampling_ratio is not 1:
+#                analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze(), int(downsampling_ratio), zero_phase = True)
+#            else:
+            analog_signals[neuron][trial_index,:] = trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze()
 
     #Find stim onsets
     stim_on = find_stims(stim_signals, stim_thresh)
     for neuron in range(num_neurons):        
-        stim_on[neuron] /= downsampling_ratio
+        #stim_on[neuron] /= downsampling_ratio
         stim_on[neuron] = np.int32(stim_on[neuron])
     
     #str_name = 'postsynaptic_events_' + name
