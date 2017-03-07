@@ -138,8 +138,8 @@ class synwrapper(object):
     def __init__(self):
         pass
     
-    def plot(self, arr_name, yax = False, ylim = False,
-                              by_neuron = False, ind = 0, hist = False):
+    def plot(self, arr_name, xaxis = 'stim_num', yax = False, ylim = False, by_neuron = False, 
+             ind = 0, hist = False):
         
         arr = self.__getattribute__(arr_name)
         num_neurons = len(arr)
@@ -920,7 +920,7 @@ def find_stims(stim_signals, thresh):
 
     return (stim_on)
     
-def load(files, trials = None, input_channel = None, stim_channel = None, downsampling_ratio = 1, stim_thresh = 3):    
+def load(files, trials = None, input_channel = None, stim_channel = None, stim_thresh = 3):    
     print('\n\n----New Group---')
 
     num_neurons = len(files)
@@ -939,7 +939,7 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
     if trials is None:
         trials = np.empty(num_neurons, dtype = np.ndarray)
         for neuron in range(num_neurons):
-            trials[neuron] = [1, len(block[neuron].segments) + 1]
+            trials[neuron] = np.array([1, len(block[neuron].segments)], dtype = np.int)
             
     if input_channel is None:
         input_channel = np.int8(np.zeros(num_neurons))
@@ -951,9 +951,8 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
 
     #Populate analog_signals and times from raw data in block
     for neuron in range(num_neurons):
-        num_trials = trials[neuron][1] -  trials[neuron][0]
+        num_trials = len(np.arange(trials[neuron][0], trials[neuron][1] + 1))
         numtimes_full = len(block[neuron].segments[0].analogsignals[0].times)  
-        #numtimes_wanted =  np.int32(numtimes_full /  downsampling_ratio)
         numtimes_wanted = numtimes_full
 
         times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0].magnitude, block[neuron].segments[0].analogsignals[0].times[-1].magnitude, num = numtimes_wanted)
@@ -962,10 +961,7 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
         stim_signals[neuron] = block[neuron].segments[0].analogsignals[np.int8(stim_channel[neuron])][:]        
 
        
-        for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0]-1:trials[neuron][1]-1]):
-#            if downsampling_ratio is not 1:
-#                analog_signals[neuron][trial_index,:] = sp_signal.decimate(trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze(), int(downsampling_ratio), zero_phase = True)
-#            else:
+        for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0] - 1 : trials[neuron][1]]):
             analog_signals[neuron][trial_index,:] = trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze()
 
     #Find stim onsets
@@ -985,8 +981,60 @@ def load(files, trials = None, input_channel = None, stim_channel = None, downsa
 
     
     return (synaptic_wrapper)
-				
 
+#export takes an abf file and exports it as a matlab file (other filetypes are not implemented yet)
+#Channels is an optional nxm matrix of channel numbers to load, for n neurons with m channels each.
+#Filetype can either be 'matlab' or 'csv'.
+#Names is an optional list of n names to save the loaded file as.
+def export(files, channels = 'all', filetype = 'matlab', names = None):
+    print('\n\n----New Group---')
+
+    num_neurons = len(files)
+    neurons_range = np.int32(range(num_neurons))
+
+    block = np.empty(num_neurons, dtype = np.ndarray)
+    analog_signals = np.empty(num_neurons, dtype = np.ndarray)    
+    times = np.empty(num_neurons, dtype = np.ndarray)   
+    
+    block = [neo.AxonIO(filename = files[i]).read()[0] for i in neurons_range]
+ 
+    #Define number of trials for each file
+    trials = np.empty(num_neurons, dtype = np.ndarray)
+    for neuron in range(num_neurons):
+        trials[neuron] = np.array([1, len(block[neuron].segments)], dtype = np.int)
+
+    #Define channels if channels is 'all', otherwise not
+    if channels == 'all':
+        channels = np.empty(num_neurons, dtype = np.ndarray)
+        for neuron in range(num_neurons):
+            channels[neuron] = np.arange(0, len(block[neuron].segments[0].analogsignals))
+
+    #Populate analog_signals and times from raw data in block
+    for neuron in range(num_neurons):
+        num_trials = len(np.arange(trials[neuron][0], trials[neuron][1] + 1))
+        numtimes_full = len(block[neuron].segments[0].analogsignals[0].times)  
+        numtimes_wanted = numtimes_full
+
+        times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0].magnitude, block[neuron].segments[0].analogsignals[0].times[-1].magnitude, num = numtimes_wanted)
+
+        analog_signals[neuron] = np.empty((len(channels[neuron]), num_trials, numtimes_wanted))
+
+        for channel_ind, channel in enumerate(channels[neuron]):
+            for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0] - 1 : trials[neuron][1]]):
+                analog_signals[neuron][int(channel), trial_index,:] = trial_substance.analogsignals[int(channel)][:].squeeze()
+
+    #Save file
+    for neuron in range(num_neurons):
+        #Define filename
+        if names == None:
+            current_name = files[neuron]
+        else:
+            current_name = names[neuron]
+
+        if filetype == 'matlab':    
+            sp.io.savemat(current_name, {'analogSignals':analog_signals[neuron],'times':times[neuron]})
+
+            
 ### ---- Other useful functions ----
 
 #Find last index in an array which has value of tofind.
@@ -1250,4 +1298,53 @@ def plot_statwrappers(stats_postsynaptic_events_1, stats_postsynaptic_events_2, 
     plt.hold(False)
 
 
-
+#def export_mat(files, trials = None, channels = None):
+#channels = np.zeros([2, len(filenames)])
+#for neuron in range(len(filenames)):
+#    channels[:,neuron] = [0,1]
+#
+#channels = np.int32(channels)
+#
+#def import_all_ephys(files, trials = None, channels = None, downsampling_ratio = 2):    
+#    print('\n\n----New Group---')
+#
+#    num_neurons = len(files)
+#    neurons_range = np.int32(range(num_neurons))
+#
+#    block = np.empty(num_neurons, dtype = np.ndarray)
+#    analog_signals = np.empty(num_neurons, dtype = np.ndarray)
+#    
+#    times = np.empty(num_neurons, dtype = np.ndarray)   
+#    
+#    block = [neo.AxonIO(filename = files[i]).read()[0] for i in neurons_range]
+# 
+#    #Check for presence of optional variables, create them if they don't exist
+#    if trials is None:
+#        trials = np.empty(num_neurons, dtype = np.ndarray)
+#        for neuron in range(num_neurons):
+#            trials[neuron] = [1, len(block[neuron].segments) + 1]
+#            
+#    #Populate analog_signals and times from raw data in block
+#    for neuron in range(num_neurons):
+#        num_trials = trials[neuron][1] -  trials[neuron][0]
+#
+#        num_channels = len(channels[:,neuron])
+#            
+#        
+#        numtimes_full = len(block[neuron].segments[0].analogsignals[0].times)  
+#        numtimes_wanted =  np.int32(numtimes_full /  downsampling_ratio)
+#        times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0].magnitude, block[neuron].segments[0].analogsignals[0].times[-1].magnitude, num = numtimes_wanted)
+#            
+#        analog_signals[neuron] = np.empty((num_trials, num_channels, numtimes_wanted))
+#
+#        for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0]-1:trials[neuron][1]-1]):
+#            for channel_index, channel_substance in enumerate(trial_substance.analogsignals[channels[0, neuron] : channels[1, neuron] + 1]):
+#                analog_signals[neuron][trial_index, channel_index, :] = sp_signal.decimate(channel_substance, downsampling_ratio)
+#
+#    return (analog_signals, times)          
+#
+#
+#analog, times = import_all_ephys(filenames, channels = channels)
+#
+#for neuron in np.arange(len(filenames)):
+#    sp.io.savemat(filenames[neuron],{'analogSignals':analog[neuron],'times':times[neuron]})
