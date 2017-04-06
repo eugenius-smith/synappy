@@ -15,5 +15,5 @@ setup(name='synappy',
       author_email='micllynn@gmail.com',
       license='MIT',
       packages=['synappy'],
-      install_requires = ['numpy', 'scipy', 'matplotlib', 'neo'],
+      install_requires = ['numpy', 'scipy', 'matplotlib', 'neo', 'bokeh'],
       zip_safe = False)

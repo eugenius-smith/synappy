@@ -3,8 +3,9 @@
 SynapPy is a rapid data visualization and quantification tool for single-cell electrophysiologists.
 
 
-It takes .abf files as inputs, detects poststim synaptic events, 
-and automatically computes a variety of statistics on them including:
+It takes .abf files as inputs and detects poststim synaptic events (based on either a stim-channel for optically or electrically evoked events; or based on spontaneous event detection for mEPSC or mIPSCs).
+
+It also computes variety of statistics on the postsynaptic events:
     .height
     .height_norm
     .latency             [by max_height, max_slope, 80_20_line (calcuate epsp foot)]

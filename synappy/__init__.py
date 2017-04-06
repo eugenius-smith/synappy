@@ -98,7 +98,7 @@ The main dependencies are: numpy, scipy, matplotlib and neo (ver 0.4+ recommende
 
 ---Useful methods on the synwrapper class---:
     synwrapper.propagate_mask(): propagate synwrapper.mask through to all other attributes.
-    synwrapper.add_heights() adds .height and .latency
+    synwrapper.add_ampli() adds .height and .latency
     synwrapper.add_sorting() adds .mask and sorts [.height, .latency]
     synwrapper.add_invertedsort() adds .height_fails
     synwrapper.add_normalized() adds .height_norm
@@ -131,6 +131,14 @@ import scipy.stats as sp_stats
 import scipy.optimize as sp_opt
 import matplotlib.pyplot as plt
 
+#import numba
+#from numba import jit
+from bokeh.plotting import figure, output_file, show
+from bokeh import mpl
+import bokeh
+
+
+
 
 
 ###Define synwrapper: A wrapper for synaptic event attributes (eg height, latency) from one dataset.
@@ -138,260 +146,139 @@ class synwrapper(object):
     def __init__(self):
         pass
     
-    def plot(self, arr_name, xaxis = 'stim_num', yax = False, ylim = False, by_neuron = False, 
-             ind = 0, hist = False):
-        
-        arr = self.__getattribute__(arr_name)
-        num_neurons = len(arr)
-    
-        if 'height' is arr_name:
-            yax = 'Event amplitude (pA)'
-        elif 'height_norm' is arr_name:
-            yax = 'Normalized event amplitude'
-        elif 'baseline' is arr_name:
-            yax = 'Baseline holding current (pA)'
-        elif 'decay' is arr_name:
-            yax = 'tau (s)'
-            hist = True
-        elif 'latency' is arr_name:
-            yax = 'Latency (s)'
-                        
-            
-        if yax  is False:
-            yax = ' '
-            
-        if hist is False:
-    
-            for neuron in range(num_neurons):
-                print('\nNeuron: ', neuron)
-                x_1 = range(1, len(arr[neuron][0,:,0]) + 1)
-                num_trials = len(arr[neuron][:,0,0])
-            
-                fig = plt.figure()
-                ax = fig.add_subplot(1, 1, 1)
-                plt.hold(True)
-                for trial in range(num_trials):
-                    ratio_thistrial = trial / (num_trials)
-                    red_thistrial = 1 / (1 + np.exp( -5 * (ratio_thistrial - 0.5)))
-                    color_thistrial = [red_thistrial, 0.2, 1 - red_thistrial]
-                    if type(arr[neuron]) is np.ma.core.MaskedArray:             
-                        ax.plot(x_1, arr[neuron][trial, :, ind].filled(np.nan),'.', color = color_thistrial, alpha = 0.6)
-                        ma = arr[neuron][trial, :, ind].mask
-                        inv_ma = np.logical_not(ma)
-                        new_pse = np.ma.array(np.array(arr[neuron][trial,:,ind]), mask = inv_ma)
-                        ax.plot(x_1, new_pse.filled(np.nan),'.', color = '0.7', alpha = 0.6)
-                    else: 
-                        ax.plot(x_1, arr[neuron][trial,:,ind],'.', color = color_thistrial, alpha = 0.6)
-                        
-                
-                ax.set_xlabel('Stimulation number')
-                ax.set_ylabel(yax)
-                ax.spines['right'].set_visible(False)
-                ax.spines['top'].set_visible(False)
-                ax.yaxis.set_ticks_position('left')
-                ax.xaxis.set_ticks_position('bottom')
-                xlim_curr = ax.get_xlim()
-                ylim_curr = ax.get_ylim()                
-                ax.set_xlim([xlim_curr[0], xlim_curr[1] + 1])
-                if arr_name is 'latency' or arr_name is 'height_norm':
-                    ax.set_ylim([0, ylim_curr[1]])
-                
-                
-
-                
-                if ylim is not False:
-                    ax.set_ylim(ylim)
-                #name = name_5ht + '_' + name_gaba + '_' name_freq + '.jpg'
-                plt.hold(False)
-                plt.show()
-                
-        elif hist is True:
-            
-            for neuron in range(num_neurons):
-                
-                print('\nNeuron: ', neuron)
-                num_trials = len(arr[neuron][:,0,0])
-                array_to_plot = arr[neuron][:, :, ind]
-                            
-                fig = plt.figure()
-                ax = fig.add_subplot(1, 1, 1)                
-                plt.hold(True)
-                if type(arr[neuron]) is np.ma.core.MaskedArray:   
-                    histpool_thisneuron = array_to_plot.compressed()                    
-                    ax.hist(histpool_thisneuron, bins = 30, facecolor = [0.2, 0.4, 0.8], normed = True, alpha = 0.6, linewidth = 0.5)
-                else: 
-                    histpool_thisneuron = array_to_plot.flatten()    
-                    ax.hist(histpool_thisneuron, n = 30, facecolor = [0.2, 0.4, 0.8], normed = True, alpha = 0.6, linewidth = 0.5)
-                        
-                
-                ax.set_xlabel('Decay (tau) (s)')
-                ax.set_ylabel('Number')
-                ax.spines['right'].set_visible(False)
-                ax.spines['top'].set_visible(False)
-                ax.yaxis.set_ticks_position('left')
-                ax.xaxis.set_ticks_position('bottom')
-                xlim_curr = ax.get_xlim()
-                
-
-                plt.hold(False)
-                plt.show()
-            
-            
-    def plot_corr(self, arr_name, arr_name2, ind1 = 0, ind2 = 0, xlabel = False, ylabel = False):
-        arr1 = self.__getattribute__(arr_name)
-        arr2 = self.__getattribute__(arr_name2)
-        
-        if xlabel is False:
-            xlabel = arr_name
-        if ylabel is False:
-            ylabel = arr_name2
-        
-        num_neurons = len(arr1)        
-
-        for neuron in range(num_neurons):
-            print('\nNeuron: ', neuron)
-            
-            plt.figure()
-            plt.hold(True)
-            num_trials = arr1[neuron].shape[0]
-            for trial in range(num_trials):
-                ratio_thistrial = trial / num_trials
-                red_thistrial = 1 / (1 + np.exp( -5 * (ratio_thistrial - 0.5)))
-                color_thistrial = [red_thistrial, 0.2, 1 - red_thistrial]
-
-                if type(arr1[neuron]) is np.ma.core.MaskedArray or type(arr2[neuron]) is np.ma.core.MaskedArray:
-                    plt.plot(arr1[neuron][trial,:,ind1].filled(np.nan), arr2[neuron][trial,:,ind2].filled(np.nan), '.', color = color_thistrial) 
-                      
-                    inv_ma = np.logical_not(arr1[neuron][trial, :, ind1].mask)
-                    new_arr1 = np.ma.array(np.array(arr1[neuron][trial, :, ind1]), mask = inv_ma)
-                    new_arr2 = np.ma.array(np.array(arr2[neuron][trial, :, ind2]), mask = inv_ma)                    
-                    plt.plot(new_arr1.filled(np.nan), new_arr2.filled(np.nan),'.', color = '0.6')
-                                
-                else:
-                    plt.plot(arr1[neuron][trial,:,ind1], arr2[neuron][trial,:,ind2], '.r')
-                
-                plt.xlabel(arr_name)
-                plt.ylabel(arr_name2)   
-            plt.show()
-
-                
-            
-    def add_heights(self, event_direction = 'up',
+    def add_ampli(self, event_direction = 'up',
                                        baseline_lower = 4, baseline_upper = 0.2, 
                                        PSE_search_lower = 5, PSE_search_upper = 30,
                                        smoothing_width = False, latency_method = 'max_height'):
-                                           
+
+        ##------Setup-------#
+
+        #Load variables from synappy                                       
         analog_signals = self.analog_signals
         stim_on = self.stim_on
-        times = self.times                       
-                                                       
+        times = self.times    
+        
         num_neurons = len(analog_signals)
+
+
+        #Define new vars to store event amplitude and latency                  
         baseline = np.empty(num_neurons, dtype = np.ndarray)
+        postsynaptic_event = np.empty(num_neurons, dtype = np.ndarray)         #postsynaptic_event stores ampli for each event     
+        postsynaptic_event_latency = np.empty(num_neurons, dtype = np.ndarray)  #postsynaptic_event_latency stores latency data for each event
+
             
         #Determine direction of postsynaptic events
         if event_direction is 'up' :
             event_direction = 1
         if event_direction is 'down':
             event_direction = -1
-                 
-        #postsynaptic_event stores data for each post-synaptic event     
-        postsynaptic_event = np.empty(num_neurons, dtype = np.ndarray)
-        postsynaptic_event_latency = np.empty(num_neurons, dtype = np.ndarray)
     
+    
+        ##-----Iterate through neurons to extract event statistics-----#
         for neuron in range(num_neurons):
+            #Define vars exclusive for this neuron
+            num_trials = len(analog_signals[neuron])              
             sample_rate = np.int32(np.round(1 / (times[neuron][1] - times[neuron][0])))   
+
+            #For this neuron, compute sample-rate-dependent variables: smoothing width,
+            #baseline width indexes.            
             if smoothing_width == False:
                 smoothing_width = 2
                 smoothing_width_ind = np.int32(smoothing_width * sample_rate / 1000) + 1
             else:
                 smoothing_width_ind = np.int32(smoothing_width * (sample_rate / 1000)) + 1
-    
-                                                   
-            num_trials = len(analog_signals[neuron])  
-            num_stims = len(stim_on[neuron])
-    
-            #convert baseline and PSE search bounds to indices                                  
-            baseline_lower_index = np.int32(baseline_lower * sample_rate / 1000)
+                                
+            baseline_lower_index = np.int32(baseline_lower * sample_rate / 1000)  #convert baseline and PSE search bounds to indices                                  
             baseline_upper_index = np.int32(baseline_upper * sample_rate / 1000)
         
             PSE_search_lower_index = np.int32(PSE_search_lower * sample_rate / 1000)
-            PSE_search_upper_index = np.int32(PSE_search_upper * sample_rate / 1000)     
-    
-            baseline[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
-            postsynaptic_event[neuron] = np.empty([num_trials, num_stims, 4], dtype = np.ndarray)
-            postsynaptic_event_latency[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
+            PSE_search_upper_index = np.int32(PSE_search_upper * sample_rate / 1000)   
             
-    
-            #postsynaptic_event[neuron][trial, stim, b], 
-                #b = 0: index of max, b = 1: val of max, b = 2: normalized val of max
-                #b = 3: latency
-    
-            for stim in range(num_stims):   
-                baseline_lower_thistrial = np.int32(stim_on[neuron][stim] - baseline_lower_index)
-                baseline_upper_thistrial = np.int32(stim_on[neuron][stim] - baseline_upper_index)
-                
-                PSE_search_lower_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_lower_index)
-                PSE_search_upper_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_upper_index) 
-        
-                #calculate mean baseline for this trial, stim. Store in baseline[neuron][trial][stim, 0]
-                #baseline[neuron][trial][stim, 1] stores stdev.
-                for trial in range(num_trials):
-        
-                    baseline[neuron][trial, stim, 0] = np.mean(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])
-                    baseline[neuron][trial, stim, 1] = np.std(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])              
-                
-                #Use boxcar-moving-avg to smooth analog signal. Calculate this in analog_smoothed
-                #and the derivative in 
-                
-                analog_presmoothed_input = analog_signals[neuron][:, PSE_search_lower_thistrial:PSE_search_upper_thistrial]              
-                analog_smoothed = sp_signal.savgol_filter(analog_presmoothed_input, smoothing_width_ind, 3)
+            max_stims = 0
+            for trial in range(num_trials):
+                if len(stim_on[neuron][trial]) > max_stims:
+                    max_stims = len(stim_on[neuron][trial])
             
-                #calculate max PSE height [stim,0] and its index [stim,1] for this trial, stim
-                if event_direction == 1:
-                    postsynaptic_event[neuron][:, stim, 1] = np.argmax(analog_smoothed, axis = -1)
-                elif event_direction == -1:
-                    postsynaptic_event[neuron][:, stim, 1] = np.argmin(analog_smoothed, axis = -1)
-                #correct index back to analog_signal reference
-                postsynaptic_event[neuron][:, stim, 1] += PSE_search_lower_thistrial                        
-                postsynaptic_event[neuron][:, stim, 0] = [analog_signals[neuron][i, np.int32(postsynaptic_event[neuron][i,stim,1])] for i in range(num_trials)]
-                postsynaptic_event[neuron][:, stim, 0] -=  baseline[neuron][:, stim, 0]      #correct EPSP val by subtracting baseline measurement               
-                #store time of max_height latency in [stim,2]
-                postsynaptic_event[neuron][:, stim, 2] =  [times[neuron][np.int32(postsynaptic_event[neuron][trial][stim,1])] - times[neuron][np.int32(stim_on[neuron][stim])] for trial in range(num_trials)]
-        
-                #derivative calcs. Go to trial indexing due to uneven size of arays from stim-on to max-height.
-                for trial in range(num_trials):
+            baseline[neuron] = np.empty([num_trials, max_stims, 2], dtype = np.ndarray)
+            postsynaptic_event[neuron] = np.empty([num_trials, max_stims, 4], dtype = np.ndarray)
+            postsynaptic_event_latency[neuron] = np.empty([num_trials, max_stims, 2], dtype = np.ndarray)
+
+                
+            for trial in range(num_trials):
+                num_stims = len(stim_on[neuron][trial])
+                
+                to_mask = np.arange(max_stims-1, num_stims-1, -1)
+                baseline[neuron][trial,to_mask] = 0
+                postsynaptic_event[neuron][trial, to_mask] = 0
+                postsynaptic_event_latency[neuron][trial, to_mask] = 0
+                    
+                for stim in range(num_stims):
+                    
+                    #Calculate the indices in analog_signal (baseline and event bounds) which define this particular event.
+                    baseline_lower_thistrial = np.int32(stim_on[neuron][trial][stim] - baseline_lower_index)
+                    baseline_upper_thistrial = np.int32(stim_on[neuron][trial][stim] - baseline_upper_index)
+                    PSE_search_lower_thistrial = np.int32(stim_on[neuron][trial][stim] + PSE_search_lower_index)
+                    PSE_search_upper_thistrial = np.int32(stim_on[neuron][trial][stim] + PSE_search_upper_index) 
+            
+            
+                    ##------Calculate event baseline--------##
+                    baseline[neuron][trial, stim, 0] = np.mean(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial]) #Mean baseline for this event
+                    baseline[neuron][trial, stim, 1] = np.std(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial]) #Stdev baseline for this event       
+                
+                
+                    ##-----Calculate event amplitude-----##
+                    #Use boxcar-moving-avg to smooth analog signal.
+                    analog_presmoothed_segment = analog_signals[neuron][trial, PSE_search_lower_thistrial:PSE_search_upper_thistrial]              
+                    #print('trial', trial, '; stim:', stim, analog_presmoothed_segment.shape)
+                    analog_smoothed = sp_signal.savgol_filter(analog_presmoothed_segment, smoothing_width_ind, 3)
+                
+                    #calculate max event ampli [stim,0] and its index [stim,1]
+                    if event_direction == 1:
+                        postsynaptic_event[neuron][trial, stim, 1] = np.argmax(analog_smoothed, axis = -1)
+                    elif event_direction == -1:
+                        postsynaptic_event[neuron][trial, stim, 1] = np.argmin(analog_smoothed, axis = -1)
+                        
+                    #correct index back to analog_signal reference and store in postsynaptic_event
+                    postsynaptic_event[neuron][trial, stim, 1] += PSE_search_lower_thistrial                        
+                    postsynaptic_event[neuron][trial, stim, 0] = analog_signals[neuron][trial, np.int32(postsynaptic_event[neuron][trial,stim,1])]
+                    postsynaptic_event[neuron][trial, stim, 0] -=  baseline[neuron][trial, stim, 0]      #correct EPSP val by subtracting baseline measurement               
+                    #store time of max_height latency in [stim,2]
+                    postsynaptic_event[neuron][trial, stim, 2] =  times[neuron][np.int32(postsynaptic_event[neuron][trial][stim,1])] - times[neuron][np.int32(stim_on[neuron][trial][stim])]
+            
+            
+                    ##------Calculate event onset latencies-----#
                     max_height_smoothed_ind = np.int32(postsynaptic_event[neuron][trial,stim,1] - PSE_search_lower_thistrial)
 
                     if max_height_smoothed_ind < 2:
                         max_height_smoothed_ind = 2
-                    analog_smoothed_deriv = np.gradient(analog_smoothed[trial, 0:max_height_smoothed_ind])
+                    analog_smoothed_deriv = np.gradient(analog_smoothed[0:max_height_smoothed_ind])
         
                     if event_direction == 1:
                         max_deriv_ind = np.argmax(analog_smoothed_deriv)
-                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
+                        postsynaptic_event[neuron][trial, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
                     elif event_direction == -1:
                         max_deriv_ind = np.argmin(analog_smoothed_deriv)
-                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
-            
+                        postsynaptic_event[neuron][trial, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
+           
             
                     #Based on latency_method, determine latency and store in postsynaptic_event_latency
                     if latency_method == 'max_height': 
                         event_time_index = np.int32(postsynaptic_event[neuron][trial, stim, 1])
-                        stim_time_index = np.int32(stim_on[neuron][stim])
+                        stim_time_index = np.int32(stim_on[neuron][trial][stim])
                         
                         postsynaptic_event_latency[neuron][trial, stim,0] =  times[neuron][event_time_index] - times[neuron][stim_time_index]
                         postsynaptic_event_latency[neuron][trial, stim,1] = postsynaptic_event[neuron][trial, stim, 1]
             
                     elif latency_method == 'max_slope':     
                         event_time_index = np.int32(max_deriv_ind + PSE_search_lower_thistrial)
-                        stim_time_index = np.int32(stim_on[neuron][stim])
+                        stim_time_index = np.int32(stim_on[neuron][trial][stim])
             
                         postsynaptic_event_latency[neuron][trial, stim, 0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
                         postsynaptic_event_latency[neuron][trial, stim, 1] = event_time_index                  
                         
                     elif latency_method == 'baseline_plus_4sd':                 
                         signal_base_diff = ((analog_smoothed[trial,0:max_height_smoothed_ind] - (baseline[neuron][trial, stim, 0] + 4 * baseline[neuron][trial, stim, 1])) ** 2 ) > 0
-                        signal_base_min_ind = inifind_last(signal_base_diff, tofind = 0)
+                        signal_base_min_ind = find_last(signal_base_diff, tofind = 0)
                         postsynaptic_event_latency[neuron][trial, stim,0] = times[neuron][signal_base_min_ind + PSE_search_lower_index]
                         postsynaptic_event_latency[neuron][trial, stim,1] = signal_base_min_ind + PSE_search_lower_index
                               
@@ -403,8 +290,8 @@ class synwrapper(object):
                  
 #                        diff_80pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
 #                        diff_20pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
-                        diff_80pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
-                        diff_20pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
+                        diff_80pc = (analog_presmoothed_segment[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
+                        diff_20pc = (analog_presmoothed_segment[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
 
                         
                         if event_direction is 1:
@@ -429,12 +316,12 @@ class synwrapper(object):
                         
                         vals_baseline = baseline[neuron][trial,stim,0] * np.ones(len(analog_smoothed[trial, 0:ind_80cross]))
                         #diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_smoothed[trial, 0:ind_80cross] - vals_8020_line) ** 2
-                        diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_presmoothed_input[trial, 0:ind_80cross] - vals_8020_line) ** 2
+                        diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_presmoothed_segment[trial, 0:ind_80cross] - vals_8020_line) ** 2
                                                 
                         intercept_8020_ind = np.argmin(diff_sq_8020_line)
                         
                         event_time_index = intercept_8020_ind + PSE_search_lower_thistrial
-                        stim_time_index = stim_on[neuron][stim]
+                        stim_time_index = stim_on[neuron][trial][stim]
                         postsynaptic_event_latency[neuron][trial,stim,0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
                         postsynaptic_event_latency[neuron][trial,stim,1] = event_time_index                  
                                 
@@ -771,14 +658,16 @@ class synwrapper(object):
 
     
     def add_decays(self, prestim = 0, poststim = 10, plotting = False, fn = 'monoexp_normalized_plusb', update_mask = False):
-        
+
+        ##------SETUP------#
+        #Import variables from synappy wrapper        
         analog_signals = self.analog_signals
         postsynaptic_events = self.height
         baseline = self.baseline
         times = self.times
-            
-        num_neurons = len(postsynaptic_events)
-    
+        
+        num_neurons = len(postsynaptic_events)        
+                
         def biexp_normalized_plusb(time_x, lambda1, lambda2, vstart2, b):
             y = np.exp(time_x * (-1) * lambda1) + vstart2 * np.exp(time_x * (-1) * lambda2) + b#+  np.exp(time_x * (-1) * lambda2)
             return y                 
@@ -830,10 +719,10 @@ class synwrapper(object):
                             pcov = 10000
                         except ValueError:
                             print(postsynaptic_curve, 'neuron: ', neuron, 'trial: ', trial, 'stim: ', stim)
-                        fitted_vars[neuron][trial,stim, :] = popt[:]
+                        fitted_vars[neuron][trial, stim, :] = popt[:]
                     elif type(postsynaptic_events[neuron]) is np.ma.core.MaskedArray and postsynaptic_events[neuron][trial, stim, 0] is np.ma.masked: 
-                        fitted_vars[neuron][trial,stim, :] = np.ones(num_vars) * 10000
-                        fitted_vars[neuron][trial,stim, :].mask = np.ones(num_vars, dtype = np.bool)
+                        fitted_vars[neuron][trial, stim, :] = np.ones(num_vars) * 10000
+                        fitted_vars[neuron][trial, stim, :].mask = np.ones(num_vars, dtype = np.bool)
                     elif type(postsynaptic_events[neuron]) is not np.ma.core.MaskedArray:
                         event_ind_min = postsynaptic_events[neuron][trial,stim,1] - prestim      
                         event_ind_max = event_ind_min + poststim_ind                 
@@ -889,7 +778,7 @@ class synwrapper(object):
                 
         
     def add_all(self, event_direction = 'down', latency_method = 'max_height', ap_filter = True, sort_thresh = False, keep_above = False, delay_mask_update = True, upper_search = 30):
-        self.add_heights(event_direction = event_direction, latency_method = latency_method, PSE_search_upper = upper_search)
+        self.add_ampli(event_direction = event_direction, latency_method = latency_method, PSE_search_upper = upper_search)
         self.add_sorting(thresh = sort_thresh, thresh_dir = keep_above)
         self.add_normalized()
         self.add_invertedsort()
@@ -897,30 +786,411 @@ class synwrapper(object):
         self.add_decays(update_mask = delay_mask_update)
         if ap_filter is True:
             self.remove_unclamped_aps()
+
+    def plot(self, arr_name, xaxis = 'stim_num', yax = False, ylim = False, by_neuron = False, 
+             ind = 0, hist = False):
         
+        arr = self.__getattribute__(arr_name)
+        num_neurons = len(arr)
+    
+        if 'height' is arr_name:
+            yax = 'Event amplitude (pA)'
+        elif 'height_norm' is arr_name:
+            yax = 'Normalized event amplitude'
+        elif 'baseline' is arr_name:
+            yax = 'Baseline holding current (pA)'
+        elif 'decay' is arr_name:
+            yax = 'tau (s)'
+            hist = True
+        elif 'latency' is arr_name:
+            yax = 'Latency (s)'
+                        
+            
+        if yax  is False:
+            yax = ' '
+            
+        if hist is False:
+    
+            for neuron in range(num_neurons):
+                print('\nNeuron: ', neuron)
+                x_1 = range(1, len(arr[neuron][0,:,0]) + 1)
+                num_trials = len(arr[neuron][:,0,0])
+            
+                fig = plt.figure()
+                ax = fig.add_subplot(1, 1, 1)
+                plt.hold(True)
+                for trial in range(num_trials):
+                    ratio_thistrial = trial / (num_trials)
+                    red_thistrial = 1 / (1 + np.exp( -5 * (ratio_thistrial - 0.5)))
+                    color_thistrial = [red_thistrial, 0.2, 1 - red_thistrial]
+                    if type(arr[neuron]) is np.ma.core.MaskedArray:             
+                        ax.plot(x_1, arr[neuron][trial, :, ind].filled(np.nan),'.', color = color_thistrial, alpha = 0.6)
+                        ma = arr[neuron][trial, :, ind].mask
+                        inv_ma = np.logical_not(ma)
+                        new_pse = np.ma.array(np.array(arr[neuron][trial,:,ind]), mask = inv_ma)
+                        ax.plot(x_1, new_pse.filled(np.nan),'.', color = '0.7', alpha = 0.6)
+                    else: 
+                        ax.plot(x_1, arr[neuron][trial,:,ind],'.', color = color_thistrial, alpha = 0.6)
+                        
+                
+                ax.set_xlabel('Stimulation number')
+                ax.set_ylabel(yax)
+                ax.spines['right'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+                ax.yaxis.set_ticks_position('left')
+                ax.xaxis.set_ticks_position('bottom')
+                xlim_curr = ax.get_xlim()
+                ylim_curr = ax.get_ylim()                
+                ax.set_xlim([xlim_curr[0], xlim_curr[1] + 1])
+                if arr_name is 'latency' or arr_name is 'height_norm':
+                    ax.set_ylim([0, ylim_curr[1]])
+                
+                
+
+                
+                if ylim is not False:
+                    ax.set_ylim(ylim)
+                #name = name_5ht + '_' + name_gaba + '_' name_freq + '.jpg'
+                plt.hold(False)
+                plt.show()
+                
+        elif hist is True:
+            
+            for neuron in range(num_neurons):
+                
+                print('\nNeuron: ', neuron)
+                num_trials = len(arr[neuron][:,0,0])
+                array_to_plot = arr[neuron][:, :, ind]
+                            
+                fig = plt.figure()
+                ax = fig.add_subplot(1, 1, 1)                
+                plt.hold(True)
+                if type(arr[neuron]) is np.ma.core.MaskedArray:   
+                    histpool_thisneuron = array_to_plot.compressed()                    
+                    ax.hist(histpool_thisneuron, bins = 30, facecolor = [0.2, 0.4, 0.8], normed = True, alpha = 0.6, linewidth = 0.5)
+                else: 
+                    histpool_thisneuron = array_to_plot.flatten()    
+                    ax.hist(histpool_thisneuron, n = 30, facecolor = [0.2, 0.4, 0.8], normed = True, alpha = 0.6, linewidth = 0.5)
+                        
+                
+                ax.set_xlabel('Decay (tau) (s)')
+                ax.set_ylabel('Number')
+                ax.spines['right'].set_visible(False)
+                ax.spines['top'].set_visible(False)
+                ax.yaxis.set_ticks_position('left')
+                ax.xaxis.set_ticks_position('bottom')
+                xlim_curr = ax.get_xlim()
+                
+
+                plt.hold(False)
+                plt.show()
+            
+            
+    def plot_corr(self, arr_name, arr_name2, ind1 = 0, ind2 = 0, xlabel = False, ylabel = False):
+        arr1 = self.__getattribute__(arr_name)
+        arr2 = self.__getattribute__(arr_name2)
+        
+        if xlabel is False:
+            xlabel = arr_name
+        if ylabel is False:
+            ylabel = arr_name2
+        
+        num_neurons = len(arr1)        
+
+        for neuron in range(num_neurons):
+            print('\nNeuron: ', neuron)
+            
+            plt.figure()
+            plt.hold(True)
+            num_trials = arr1[neuron].shape[0]
+            for trial in range(num_trials):
+                ratio_thistrial = trial / num_trials
+                red_thistrial = 1 / (1 + np.exp( -5 * (ratio_thistrial - 0.5)))
+                color_thistrial = [red_thistrial, 0.2, 1 - red_thistrial]
+
+                if type(arr1[neuron]) is np.ma.core.MaskedArray or type(arr2[neuron]) is np.ma.core.MaskedArray:
+                    plt.plot(arr1[neuron][trial,:,ind1].filled(np.nan), arr2[neuron][trial,:,ind2].filled(np.nan), '.', color = color_thistrial) 
+                      
+                    inv_ma = np.logical_not(arr1[neuron][trial, :, ind1].mask)
+                    new_arr1 = np.ma.array(np.array(arr1[neuron][trial, :, ind1]), mask = inv_ma)
+                    new_arr2 = np.ma.array(np.array(arr2[neuron][trial, :, ind2]), mask = inv_ma)                    
+                    plt.plot(new_arr1.filled(np.nan), new_arr2.filled(np.nan),'.', color = '0.6')
+                                
+                else:
+                    plt.plot(arr1[neuron][trial,:,ind1], arr2[neuron][trial,:,ind2], '.r')
+                
+                plt.xlabel(arr_name)
+                plt.ylabel(arr_name2)   
+            plt.show()
+
+                
+            
+
+
+### ---- core accelerated operations on synwrapper classes ----
+# - The idea is to take readable pandas DataFrame objects (from synwrapper), and use
+#   these core functions to jit-accelerate the DataFrame processing and pass 
+#   them back to the synwrapper
+
+
+
+@jit
+def add_ampli_core(analog_signals, stim_on, times, event_direction = 'up',
+                                   baseline_lower = 4, baseline_upper = 0.2, 
+                                   PSE_search_lower = 5, PSE_search_upper = 30,
+                                   smoothing_width = False, latency_method = 'max_height'):
+                                       
+    #Determine direction of postsynaptic events
+    if event_direction is 'up' :
+        event_direction = 1
+    if event_direction is 'down':
+        event_direction = -1
+             
+    #Initialize classes for storing new variables associated with postsynaptic events   
+    num_neurons = len(analog_signals)
+    baseline = np.empty(num_neurons, dtype = np.ndarray)
+    postsynaptic_event = np.empty(num_neurons, dtype = pd.DataFrame)
+    postsynaptic_event_latency = np.empty(num_neurons, dtype = pd.DataFrame)
+
+
+    #Iterate through neurons
+    for neuron in range(num_neurons):
+        num_trials = len(analog_signals[neuron])    #Define size of trials and stims
+
+        for trial in range(num_trials):
+            num_stims = len(stim_on[neuron][trial])
+            
+            #Find sampling rate and size of smoothing kernel
+            sample_rate = np.int32(np.round(1 / (times[neuron][1] - times[neuron][0])))   
+            if smoothing_width == False:
+                smoothing_width = 2
+                smoothing_width_ind = np.int32(smoothing_width * sample_rate / 1000) + 1
+            else:
+                smoothing_width_ind = np.int32(smoothing_width * (sample_rate / 1000)) + 1
+    
+                                                   
+            #convert baseline and PSE search bounds to indices                
+            baseline_lower_index = np.int32(baseline_lower * sample_rate / 1000)
+            baseline_upper_index = np.int32(baseline_upper * sample_rate / 1000)
+        
+            PSE_search_lower_index = np.int32(PSE_search_lower * sample_rate / 1000)
+            PSE_search_upper_index = np.int32(PSE_search_upper * sample_rate / 1000)     
+    
+            baseline[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
+            postsynaptic_event[neuron] = np.empty([num_trials, num_stims, 4], dtype = np.ndarray)
+            postsynaptic_event_latency[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
+            
+    
+            #postsynaptic_event[neuron][trial, stim, b], 
+                #b = 0: index of max, b = 1: val of max, b = 2: normalized val of max
+                #b = 3: latency
+    
+            for stim in range(num_stims):   
+                baseline_lower_thistrial = np.int32(stim_on[neuron][stim] - baseline_lower_index)
+                baseline_upper_thistrial = np.int32(stim_on[neuron][stim] - baseline_upper_index)
+                
+                PSE_search_lower_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_lower_index)
+                PSE_search_upper_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_upper_index) 
+        
+                #calculate mean baseline for this trial, stim. Store in baseline[neuron][trial][stim, 0]
+                #baseline[neuron][trial][stim, 1] stores stdev.
+                for trial in range(num_trials):
+        
+                    baseline[neuron][trial, stim, 0] = np.mean(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])
+                    baseline[neuron][trial, stim, 1] = np.std(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])              
+                
+                #Use boxcar-moving-avg to smooth analog signal. Calculate this in analog_smoothed
+                #and the derivative in 
+                
+                analog_presmoothed_input = analog_signals[neuron][:, PSE_search_lower_thistrial:PSE_search_upper_thistrial]              
+                analog_smoothed = sp_signal.savgol_filter(analog_presmoothed_input, smoothing_width_ind, 3)
+            
+                #calculate max PSE height [stim,0] and its index [stim,1] for this trial, stim
+                if event_direction == 1:
+                    postsynaptic_event[neuron][:, stim, 1] = np.argmax(analog_smoothed, axis = -1)
+                elif event_direction == -1:
+                    postsynaptic_event[neuron][:, stim, 1] = np.argmin(analog_smoothed, axis = -1)
+                #correct index back to analog_signal reference
+                postsynaptic_event[neuron][:, stim, 1] += PSE_search_lower_thistrial                        
+                postsynaptic_event[neuron][:, stim, 0] = [analog_signals[neuron][i, np.int32(postsynaptic_event[neuron][i,stim,1])] for i in range(num_trials)]
+                postsynaptic_event[neuron][:, stim, 0] -=  baseline[neuron][:, stim, 0]      #correct EPSP val by subtracting baseline measurement               
+                #store time of max_height latency in [stim,2]
+                postsynaptic_event[neuron][:, stim, 2] =  [times[neuron][np.int32(postsynaptic_event[neuron][trial][stim,1])] - times[neuron][np.int32(stim_on[neuron][stim])] for trial in range(num_trials)]
+        
+                #derivative calcs. Go to trial indexing due to uneven size of arays from stim-on to max-height.
+                for trial in range(num_trials):
+                    max_height_smoothed_ind = np.int32(postsynaptic_event[neuron][trial,stim,1] - PSE_search_lower_thistrial)
+    
+                    if max_height_smoothed_ind < 2:
+                        max_height_smoothed_ind = 2
+                    analog_smoothed_deriv = np.gradient(analog_smoothed[trial, 0:max_height_smoothed_ind])
+        
+                    if event_direction == 1:
+                        max_deriv_ind = np.argmax(analog_smoothed_deriv)
+                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
+                    elif event_direction == -1:
+                        max_deriv_ind = np.argmin(analog_smoothed_deriv)
+                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
+            
+            
+                    #Based on latency_method, determine latency and store in postsynaptic_event_latency
+                    if latency_method == 'max_height': 
+                        event_time_index = np.int32(postsynaptic_event[neuron][trial, stim, 1])
+                        stim_time_index = np.int32(stim_on[neuron][stim])
+                        
+                        postsynaptic_event_latency[neuron][trial, stim,0] =  times[neuron][event_time_index] - times[neuron][stim_time_index]
+                        postsynaptic_event_latency[neuron][trial, stim,1] = postsynaptic_event[neuron][trial, stim, 1]
+            
+                    elif latency_method == 'max_slope':     
+                        event_time_index = np.int32(max_deriv_ind + PSE_search_lower_thistrial)
+                        stim_time_index = np.int32(stim_on[neuron][stim])
+            
+                        postsynaptic_event_latency[neuron][trial, stim, 0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
+                        postsynaptic_event_latency[neuron][trial, stim, 1] = event_time_index                  
+                        
+                    elif latency_method == 'baseline_plus_4sd':                 
+                        signal_base_diff = ((analog_smoothed[trial,0:max_height_smoothed_ind] - (baseline[neuron][trial, stim, 0] + 4 * baseline[neuron][trial, stim, 1])) ** 2 ) > 0
+                        signal_base_min_ind = inifind_last(signal_base_diff, tofind = 0)
+                        postsynaptic_event_latency[neuron][trial, stim,0] = times[neuron][signal_base_min_ind + PSE_search_lower_index]
+                        postsynaptic_event_latency[neuron][trial, stim,1] = signal_base_min_ind + PSE_search_lower_index
+                              
+                    elif latency_method == '80_20_line':
+                        value_80pc = 0.8 * (postsynaptic_event[neuron][trial,stim,0]) + baseline[neuron][trial,stim,0]         
+                        value_20pc = 0.2 * (postsynaptic_event[neuron][trial,stim,0]) + baseline[neuron][trial,stim,0]         
+                        value_80pc_sizeanalog =  value_80pc * np.ones(len(analog_smoothed[trial, 0:max_height_smoothed_ind]))                   
+                        value_20pc_sizeanalog =  value_20pc * np.ones(len(analog_smoothed[trial, 0:max_height_smoothed_ind]))                   
+                 
+    #                        diff_80pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
+    #                        diff_20pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
+                        diff_80pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
+                        diff_20pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
+    
+                        
+                        if event_direction is 1:
+                            ind_80cross = find_last(diff_80pc, tofind = 0)
+                            ind_20cross = find_last(diff_20pc, tofind = 0)
+                        elif event_direction is -1:
+                            ind_80cross = find_last(diff_80pc, tofind = 1)
+                            ind_20cross = find_last(diff_20pc, tofind = 1)
+                                                    
+                        if ind_20cross > ind_80cross or ind_80cross == 0:                   
+                            ind_80cross = np.int32(1)
+                            ind_20cross = np.int32(0)                        
+                        
+                        val_80cross = analog_smoothed[trial, ind_80cross]                    
+                        val_20cross = analog_smoothed[trial, ind_20cross]
+                        
+                        
+                        slope_8020_line = (val_80cross - val_20cross) / (ind_80cross - ind_20cross)
+                        
+                        vals_8020_line = np.zeros(len(analog_smoothed[trial, 0:ind_80cross + 1]))
+                        vals_8020_line = [(val_80cross - (ind_80cross - i)*slope_8020_line) for i in range(ind_80cross)]
+                        
+                        vals_baseline = baseline[neuron][trial,stim,0] * np.ones(len(analog_smoothed[trial, 0:ind_80cross]))
+                        #diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_smoothed[trial, 0:ind_80cross] - vals_8020_line) ** 2
+                        diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_presmoothed_input[trial, 0:ind_80cross] - vals_8020_line) ** 2
+                                                
+                        intercept_8020_ind = np.argmin(diff_sq_8020_line)
+                        
+                        event_time_index = intercept_8020_ind + PSE_search_lower_thistrial
+                        stim_time_index = stim_on[neuron][stim]
+                        postsynaptic_event_latency[neuron][trial,stim,0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
+                        postsynaptic_event_latency[neuron][trial,stim,1] = event_time_index                  
+                            
+    self.height =  postsynaptic_event 
+    self.latency = postsynaptic_event_latency
+    self.baseline = baseline
+#        self.upslope = 
+    
+    print('\nAdded height. \nAdded latency. \nAdded baseline.')              
+                                                   
+                                           
+    return
+
         
         
 ### ---- synappy functions ----
-###     core functionality is syn.find_stims and syn.load.
-def find_stims(stim_signals, thresh):
-    num_neurons = len(stim_signals)
+###      functionality is syn.find_stims and syn.load.
+def find_stims(analogs, stims, thresh):
+    num_neurons = len(analogs)
+    
     stim_on = np.empty(num_neurons, dtype = np.ndarray)
     
 
     #Find start of stim-on in stim_signals[neuron][:,stim_channel[neuron],:] for each trial. 
     #Store in light_on(a): a>trial number, light_on_ind(a)>time index of light-on for that trial
     for neuron in range(num_neurons):
-        stim_on[neuron] = np.zeros(1)
-        all_crossings = np.where(stim_signals[neuron] > thresh)[0]        
-        stim_on[neuron][0] = all_crossings[0]
+        num_trials = analogs[neuron].shape[0]
+        
+        stim_on[neuron] = np.empty(num_trials, dtype = np.ndarray)   
+        
+        #Fill trial 0 with first stim crossings
+        all_crossings = np.where(stims[neuron] > thresh)[0]
+        stim_on[neuron][0] = np.array([all_crossings[0]])
         
         for crossing_ind in np.arange(1,len(all_crossings)):
             if all_crossings[crossing_ind-1] != all_crossings[crossing_ind] - 1:
-                stim_on[neuron] = np.append(stim_on[neuron], all_crossings[crossing_ind])                    
+                stim_on[neuron][0] = np.append(stim_on[neuron][0], all_crossings[crossing_ind])
 
-    return (stim_on)
+        #Now fill all trials with trial 0
+        for trial in np.arange(1, num_trials): 
+            stim_on[neuron][trial] = stim_on[neuron][0]
+
+    print('\nAdded stim_on:')
+    for neuron in range(num_neurons):
+        print('\tNeuron ', neuron, ': ', len(stim_on[neuron][0]), ' event(s)')
+
+    return stim_on
+
+def find_spontaneous(analog_signals, sg_smooth_filt1 = 29, filt_size = 21, thresh_ampli = 3, thresh_deriv = -1.2, savgol_polynomial = 3):
+    num_neurons = len(analog_signals)
+    stim_on = np.empty(num_neurons, dtype = np.ndarray)
     
-def load(files, trials = None, input_channel = None, stim_channel = None, stim_thresh = 3):    
+    for neuron in range(num_neurons):
+        num_trials = analog_signals[neuron].shape[0]
+        stim_on[neuron] = np.empty(num_trials, dtype = np.ndarray)  
+        
+        for trial in range(num_trials):
+            stim_on[neuron][trial] = np.zeros(1)
+            trial_analog = sp.signal.savgol_filter(analog_signals[neuron][trial, :], sg_smooth_filt1, 3)
+            
+            trial_gradient = np.gradient(trial_analog)            
+            #trial_verysmooth = sp.signal.savgol_filter(trial_analog, filt_size, savgol_polynomial)
+            trial_verysmooth = trial_gradient
+            
+            trial_search = np.where((trial_gradient < thresh_deriv) & (trial_analog + thresh_ampli < trial_verysmooth))[0]
+            
+            stim_on[neuron][trial][0] = trial_search[0]
+        
+            for crossing_ind in np.arange(1,len(trial_search)):
+                if trial_search[crossing_ind-1] != trial_search[crossing_ind] - 1:
+                    stim_on[neuron][trial] = np.append(stim_on[neuron][trial], trial_search[crossing_ind])   
+                    
+            stim_on[neuron][trial] -= 25 
+
+            to_delete_low = np.where(stim_on[neuron][trial] < 1600)
+            stim_on[neuron][trial] = np.delete(stim_on[neuron][trial], to_delete_low)
+
+            to_delete_high = np.where(stim_on[neuron][trial] > len(events.analog_signals[0][0]) - 251)
+            stim_on[neuron][trial] = np.delete(stim_on[neuron][trial], to_delete_high)
+            
+            
+            stim_on[neuron][trial] = stim_on[neuron][trial].astype(np.int32)
+
+
+    print('\nAdded stim_on (spontaneous events):')
+    for neuron in range(num_neurons):
+        num_trials = analog_signals[neuron].shape[0]
+        
+        print('\tNeuron ', neuron, ': ')
+        for trial in range(num_trials):
+            print('\t\tTrial ', int(trial), ': ', len(stim_on[neuron][trial]), ' event(s)')
+                
+    return (stim_on)           
+
+    
+def load(files, trials = None, input_channel = None, stim_channel = None, 
+         stim_thresh = 3, spontaneous = False, filt_size = 1001, thresh_ampli = 3, thresh_deriv = -1.2):    
     print('\n\n----New Group---')
 
     num_neurons = len(files)
@@ -964,23 +1234,42 @@ def load(files, trials = None, input_channel = None, stim_channel = None, stim_t
         for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0] - 1 : trials[neuron][1]]):
             analog_signals[neuron][trial_index,:] = trial_substance.analogsignals[np.int8(input_channel[neuron])][:].squeeze()
 
-    #Find stim onsets
-    stim_on = find_stims(stim_signals, stim_thresh)
-    for neuron in range(num_neurons):        
-        #stim_on[neuron] /= downsampling_ratio
-        stim_on[neuron] = np.int32(stim_on[neuron])
-    
-    #str_name = 'postsynaptic_events_' + name
-    
+#    #Find stim onsets
+#    if spontaneous is False:
+#        stim_on = find_stims(stim_signals, stim_thresh)
+#        for neuron in range(num_neurons):        
+#            #stim_on[neuron] /= downsampling_ratio
+#            stim_on[neuron] = np.int32(stim_on[neuron])
+#    elif spontaneous is True:
+#        stim_on = find_spontaneous(analog_signals, filt_size = filt_size, thresh_ampli = thresh_ampli, thresh_deriv = thresh_deriv)
+#    
+#    #str_name = 'postsynaptic_events_' + name
+#    
     synaptic_wrapper = synwrapper()
     synaptic_wrapper.analog_signals = analog_signals
-    synaptic_wrapper.stim_on = stim_on
+    synaptic_wrapper.stim_signals = stim_signals
     synaptic_wrapper.times = times
     #synaptic_wrapper.name = str_name
-    print('\nInitialized. \nAdded analog_signals. \nAdded stim_on. \nAdded times.')              
+    print('\nInitialized. \nAdded analog_signals. \nAdded times.')              
 
     
     return (synaptic_wrapper)
+
+def add_events(wrapper, event_type = 'stim', stim_thresh = 2, spont_filtsize = 1001, spont_threshampli = 3, spont_threshderiv = -1.2, savgol_polynomial = 3):
+    analogs = wrapper.analog_signals
+    stims = wrapper.stim_signals
+    
+    if event_type == 'stim':
+        stim_on = find_stims(analogs, stims, thresh = stim_thresh)
+    elif event_type == 'spontaneous':
+        stim_on = find_spontaneous(analogs, filt_size = spont_filtsize, thresh_ampli = spont_threshampli, thresh_deriv = spont_threshderiv, savgol_polynomial = savgol_polynomial)
+        
+    wrapper.stim_on = stim_on
+        
+    return
+    
+    
+
 
 #export takes an abf file and exports it as a matlab file (other filetypes are not implemented yet)
 #Channels is an optional nxm matrix of channel numbers to load, for n neurons with m channels each.
@@ -1298,53 +1587,106 @@ def plot_statwrappers(stats_postsynaptic_events_1, stats_postsynaptic_events_2, 
     plt.hold(False)
 
 
-#def export_mat(files, trials = None, channels = None):
-#channels = np.zeros([2, len(filenames)])
-#for neuron in range(len(filenames)):
-#    channels[:,neuron] = [0,1]
-#
-#channels = np.int32(channels)
-#
-#def import_all_ephys(files, trials = None, channels = None, downsampling_ratio = 2):    
-#    print('\n\n----New Group---')
-#
-#    num_neurons = len(files)
-#    neurons_range = np.int32(range(num_neurons))
-#
-#    block = np.empty(num_neurons, dtype = np.ndarray)
-#    analog_signals = np.empty(num_neurons, dtype = np.ndarray)
-#    
-#    times = np.empty(num_neurons, dtype = np.ndarray)   
-#    
-#    block = [neo.AxonIO(filename = files[i]).read()[0] for i in neurons_range]
-# 
-#    #Check for presence of optional variables, create them if they don't exist
-#    if trials is None:
-#        trials = np.empty(num_neurons, dtype = np.ndarray)
-#        for neuron in range(num_neurons):
-#            trials[neuron] = [1, len(block[neuron].segments) + 1]
-#            
-#    #Populate analog_signals and times from raw data in block
-#    for neuron in range(num_neurons):
-#        num_trials = trials[neuron][1] -  trials[neuron][0]
-#
-#        num_channels = len(channels[:,neuron])
-#            
-#        
-#        numtimes_full = len(block[neuron].segments[0].analogsignals[0].times)  
-#        numtimes_wanted =  np.int32(numtimes_full /  downsampling_ratio)
-#        times[neuron] = np.linspace(block[neuron].segments[0].analogsignals[0].times[0].magnitude, block[neuron].segments[0].analogsignals[0].times[-1].magnitude, num = numtimes_wanted)
-#            
-#        analog_signals[neuron] = np.empty((num_trials, num_channels, numtimes_wanted))
-#
-#        for trial_index, trial_substance in enumerate(block[neuron].segments[trials[neuron][0]-1:trials[neuron][1]-1]):
-#            for channel_index, channel_substance in enumerate(trial_substance.analogsignals[channels[0, neuron] : channels[1, neuron] + 1]):
-#                analog_signals[neuron][trial_index, channel_index, :] = sp_signal.decimate(channel_substance, downsampling_ratio)
-#
-#    return (analog_signals, times)          
-#
-#
-#analog, times = import_all_ephys(filenames, channels = channels)
-#
-#for neuron in np.arange(len(filenames)):
-#    sp.io.savemat(filenames[neuron],{'analogSignals':analog[neuron],'times':times[neuron]})
+
+#---------TOOLS TO VISUALIZE SPONTANEOUS EVENTS-------#
+def plot_finds(wrap, neuron, trial, start, end,  deriv = False,  filt_size = 1501):
+    output_file("finds.html", title = 'Identified mEPSCs')
+    
+    start_ind = np.int32(start * 5000)
+    end_ind = np.int32(end * 5000)
+    
+    mask_for_ana = np.ones(len(wrap.analog_signals[neuron][trial,:]))
+    mask_for_ana_allfinds = np.ones(len(wrap.analog_signals[neuron][trial,:]))
+    
+    mask_for_ana_allfinds[np.int32(wrap.stim_on[neuron][trial][:])] = 0
+    mask_for_ana[np.int32(wrap.height[neuron][trial, :, 1].compressed())] = 0
+    
+    if deriv is False:
+        ana_masked = np.ma.array(wrap.analog_signals[neuron][trial,:], mask = mask_for_ana)
+        ana_verysmooth = sp.signal.savgol_filter(wrap.analog_signals[neuron][trial, :], filt_size, 4)
+        
+        ana_allfinds_masked = np.ma.array(wrap.analog_signals[neuron][trial,:], mask = mask_for_ana_allfinds)
+         
+        
+    elif deriv is True:
+        ana_masked = np.ma.array(np.gradient(wrap.analog_signals[neuron][trial,:]), mask = mask_for_ana)
+        ana_verysmooth = sp.signal.savgol_filter(np.gradient(wrap.analog_signals[neuron][trial, :]), filt_size, 4)
+
+        ana_allfinds_masked = np.ma.array(np.gradient(wrap.analog_signals[neuron][trial,:]), mask = mask_for_ana_allfinds)
+            
+    #fig = figure(x_axis_label = 'Index', y_axis_label = 'Current (pA)')
+    fig = plt.figure()
+    
+    plt.hold(True)
+    if deriv is False:
+        
+        plt.plot(wrap.analog_signals[neuron][trial, start_ind:end_ind], color = [0.2, 0.3, 0.8], alpha = 0.5)
+        plt.plot(ana_masked[start_ind:end_ind], '.r', linewidth = 5, color = [0.8, 0.2, 0.2])
+        plt.plot(ana_allfinds_masked[start_ind:end_ind], '.r', linewidth = 5, color = [0.7, 0.5, 0.5], alpha = 0.3)
+
+        plt.plot(ana_verysmooth[start_ind:end_ind], color = [0, 0.3, 0], alpha = 0.8)
+        
+
+    elif deriv is True:
+
+        plt.plot(np.gradient(wrap.analog_signals[neuron][trial, start_ind:end_ind]), color = [0.2, 0.2, 0.8], alpha = 0.5)
+        plt.plot(ana_masked[start_ind:end_ind], '.r', linewidth = 5, color = [0.8, 0.2, 0.2])
+        plt.plot(ana_allfinds_masked[start_ind:end_ind], '.r', linewidth = 5, color = [0.6, 0.2, 0.5], alpha = 0.3)
+
+        plt.plot(ana_verysmooth[start_ind:end_ind], color = [0, 0.4, 0], alpha = 0.8)
+    
+    show(mpl.to_bokeh())
+    #mpld3.show(fig)
+    #mpld3.save_html(fig, 'figure')
+
+def plot_finds2(wrap, neuron, trial, start, end,  deriv = False):
+    start_ind = np.int32(start * 5000)
+    end_ind = np.int32(end * 5000)
+    
+    times = wrap.times[neuron][start_ind:end_ind]
+    
+    mask_for_ana = np.ones(len(wrap.analog_signals[neuron][trial,:]))
+    mask_for_ana_allfinds = np.ones(len(wrap.analog_signals[neuron][trial,:]))
+    
+    mask_for_ana_allfinds[np.int32(wrap.stim_on[neuron][trial][:] + 25)] = 0
+    mask_for_ana[np.int32(wrap.height[neuron][trial, :, 1].compressed())] = 0
+    
+    if deriv is False:
+        ana_masked = np.ma.filled(np.ma.array(wrap.analog_signals[neuron][trial,:], mask = mask_for_ana), fill_value = np.nan)
+        ana_verysmooth = sp.signal.savgol_filter(wrap.analog_signals[neuron][trial, :], 1001, 4)
+        
+        ana_allfinds_masked = np.ma.array(wrap.analog_signals[neuron][trial,:], mask = mask_for_ana_allfinds)
+         
+        
+    elif deriv is True:
+        ana_masked = np.ma.filled(np.ma.array(np.gradient(wrap.analog_signals[neuron][trial,:]), mask = mask_for_ana), fill_value = np.nan)
+        ana_verysmooth = sp.signal.savgol_filter(np.gradient(wrap.analog_signals[neuron][trial, :]), 1001, 4)
+
+        ana_allfinds_masked = np.ma.array(np.gradient(wrap.analog_signals[neuron][trial,:]), mask = mask_for_ana_allfinds)
+    
+    bokeh.io.curdoc().clear()        
+    output_file("finds.html", title = 'Identified mEPSCs')
+    p = figure(title="Identified mEPSCs")#webgl = True)
+    
+    plt.hold(True)
+    if deriv is False:
+        full_signal = np.double(wrap.analog_signals[neuron][trial, start_ind:end_ind])
+        p.line(times, full_signal, line_width=0.5)
+        p.circle(times, ana_masked[start_ind:end_ind], color = "firebrick", size = 4)
+        #p.circle(times, ana_allfinds_masked[start_ind:end_ind], color = (0, 1, 0), size = 2)
+
+        
+
+    elif deriv is True:
+
+        plt.plot(np.gradient(wrap.analog_signals[neuron][trial, start_ind:end_ind]), color = [0.2, 0.2, 0.8], alpha = 0.5)
+        plt.plot(ana_masked[start_ind:end_ind], '.r', linewidth = 5, color = [0.8, 0.2, 0.2])
+        plt.plot(ana_allfinds_masked[start_ind:end_ind], '.r', linewidth = 5, color = [0.6, 0.2, 0.5], alpha = 0.3)
+
+        plt.plot(ana_verysmooth[start_ind:end_ind], color = [0, 0.4, 0], alpha = 0.8)
+    
+    show(p)
+    #output_file("MPL_plot.html", title = "Identified events")
+
+    #mpld3.show(fig)
+    #mpld3.save_html(fig, 'figure')
