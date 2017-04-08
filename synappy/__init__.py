@@ -933,179 +933,179 @@ class synwrapper(object):
 #   them back to the synwrapper
 
 
-
-@jit
-def add_ampli_core(analog_signals, stim_on, times, event_direction = 'up',
-                                   baseline_lower = 4, baseline_upper = 0.2, 
-                                   PSE_search_lower = 5, PSE_search_upper = 30,
-                                   smoothing_width = False, latency_method = 'max_height'):
-                                       
-    #Determine direction of postsynaptic events
-    if event_direction is 'up' :
-        event_direction = 1
-    if event_direction is 'down':
-        event_direction = -1
-             
-    #Initialize classes for storing new variables associated with postsynaptic events   
-    num_neurons = len(analog_signals)
-    baseline = np.empty(num_neurons, dtype = np.ndarray)
-    postsynaptic_event = np.empty(num_neurons, dtype = pd.DataFrame)
-    postsynaptic_event_latency = np.empty(num_neurons, dtype = pd.DataFrame)
-
-
-    #Iterate through neurons
-    for neuron in range(num_neurons):
-        num_trials = len(analog_signals[neuron])    #Define size of trials and stims
-
-        for trial in range(num_trials):
-            num_stims = len(stim_on[neuron][trial])
-            
-            #Find sampling rate and size of smoothing kernel
-            sample_rate = np.int32(np.round(1 / (times[neuron][1] - times[neuron][0])))   
-            if smoothing_width == False:
-                smoothing_width = 2
-                smoothing_width_ind = np.int32(smoothing_width * sample_rate / 1000) + 1
-            else:
-                smoothing_width_ind = np.int32(smoothing_width * (sample_rate / 1000)) + 1
-    
-                                                   
-            #convert baseline and PSE search bounds to indices                
-            baseline_lower_index = np.int32(baseline_lower * sample_rate / 1000)
-            baseline_upper_index = np.int32(baseline_upper * sample_rate / 1000)
-        
-            PSE_search_lower_index = np.int32(PSE_search_lower * sample_rate / 1000)
-            PSE_search_upper_index = np.int32(PSE_search_upper * sample_rate / 1000)     
-    
-            baseline[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
-            postsynaptic_event[neuron] = np.empty([num_trials, num_stims, 4], dtype = np.ndarray)
-            postsynaptic_event_latency[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
-            
-    
-            #postsynaptic_event[neuron][trial, stim, b], 
-                #b = 0: index of max, b = 1: val of max, b = 2: normalized val of max
-                #b = 3: latency
-    
-            for stim in range(num_stims):   
-                baseline_lower_thistrial = np.int32(stim_on[neuron][stim] - baseline_lower_index)
-                baseline_upper_thistrial = np.int32(stim_on[neuron][stim] - baseline_upper_index)
-                
-                PSE_search_lower_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_lower_index)
-                PSE_search_upper_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_upper_index) 
-        
-                #calculate mean baseline for this trial, stim. Store in baseline[neuron][trial][stim, 0]
-                #baseline[neuron][trial][stim, 1] stores stdev.
-                for trial in range(num_trials):
-        
-                    baseline[neuron][trial, stim, 0] = np.mean(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])
-                    baseline[neuron][trial, stim, 1] = np.std(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])              
-                
-                #Use boxcar-moving-avg to smooth analog signal. Calculate this in analog_smoothed
-                #and the derivative in 
-                
-                analog_presmoothed_input = analog_signals[neuron][:, PSE_search_lower_thistrial:PSE_search_upper_thistrial]              
-                analog_smoothed = sp_signal.savgol_filter(analog_presmoothed_input, smoothing_width_ind, 3)
-            
-                #calculate max PSE height [stim,0] and its index [stim,1] for this trial, stim
-                if event_direction == 1:
-                    postsynaptic_event[neuron][:, stim, 1] = np.argmax(analog_smoothed, axis = -1)
-                elif event_direction == -1:
-                    postsynaptic_event[neuron][:, stim, 1] = np.argmin(analog_smoothed, axis = -1)
-                #correct index back to analog_signal reference
-                postsynaptic_event[neuron][:, stim, 1] += PSE_search_lower_thistrial                        
-                postsynaptic_event[neuron][:, stim, 0] = [analog_signals[neuron][i, np.int32(postsynaptic_event[neuron][i,stim,1])] for i in range(num_trials)]
-                postsynaptic_event[neuron][:, stim, 0] -=  baseline[neuron][:, stim, 0]      #correct EPSP val by subtracting baseline measurement               
-                #store time of max_height latency in [stim,2]
-                postsynaptic_event[neuron][:, stim, 2] =  [times[neuron][np.int32(postsynaptic_event[neuron][trial][stim,1])] - times[neuron][np.int32(stim_on[neuron][stim])] for trial in range(num_trials)]
-        
-                #derivative calcs. Go to trial indexing due to uneven size of arays from stim-on to max-height.
-                for trial in range(num_trials):
-                    max_height_smoothed_ind = np.int32(postsynaptic_event[neuron][trial,stim,1] - PSE_search_lower_thistrial)
-    
-                    if max_height_smoothed_ind < 2:
-                        max_height_smoothed_ind = 2
-                    analog_smoothed_deriv = np.gradient(analog_smoothed[trial, 0:max_height_smoothed_ind])
-        
-                    if event_direction == 1:
-                        max_deriv_ind = np.argmax(analog_smoothed_deriv)
-                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
-                    elif event_direction == -1:
-                        max_deriv_ind = np.argmin(analog_smoothed_deriv)
-                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
-            
-            
-                    #Based on latency_method, determine latency and store in postsynaptic_event_latency
-                    if latency_method == 'max_height': 
-                        event_time_index = np.int32(postsynaptic_event[neuron][trial, stim, 1])
-                        stim_time_index = np.int32(stim_on[neuron][stim])
-                        
-                        postsynaptic_event_latency[neuron][trial, stim,0] =  times[neuron][event_time_index] - times[neuron][stim_time_index]
-                        postsynaptic_event_latency[neuron][trial, stim,1] = postsynaptic_event[neuron][trial, stim, 1]
-            
-                    elif latency_method == 'max_slope':     
-                        event_time_index = np.int32(max_deriv_ind + PSE_search_lower_thistrial)
-                        stim_time_index = np.int32(stim_on[neuron][stim])
-            
-                        postsynaptic_event_latency[neuron][trial, stim, 0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
-                        postsynaptic_event_latency[neuron][trial, stim, 1] = event_time_index                  
-                        
-                    elif latency_method == 'baseline_plus_4sd':                 
-                        signal_base_diff = ((analog_smoothed[trial,0:max_height_smoothed_ind] - (baseline[neuron][trial, stim, 0] + 4 * baseline[neuron][trial, stim, 1])) ** 2 ) > 0
-                        signal_base_min_ind = inifind_last(signal_base_diff, tofind = 0)
-                        postsynaptic_event_latency[neuron][trial, stim,0] = times[neuron][signal_base_min_ind + PSE_search_lower_index]
-                        postsynaptic_event_latency[neuron][trial, stim,1] = signal_base_min_ind + PSE_search_lower_index
-                              
-                    elif latency_method == '80_20_line':
-                        value_80pc = 0.8 * (postsynaptic_event[neuron][trial,stim,0]) + baseline[neuron][trial,stim,0]         
-                        value_20pc = 0.2 * (postsynaptic_event[neuron][trial,stim,0]) + baseline[neuron][trial,stim,0]         
-                        value_80pc_sizeanalog =  value_80pc * np.ones(len(analog_smoothed[trial, 0:max_height_smoothed_ind]))                   
-                        value_20pc_sizeanalog =  value_20pc * np.ones(len(analog_smoothed[trial, 0:max_height_smoothed_ind]))                   
-                 
-    #                        diff_80pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
-    #                        diff_20pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
-                        diff_80pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
-                        diff_20pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
-    
-                        
-                        if event_direction is 1:
-                            ind_80cross = find_last(diff_80pc, tofind = 0)
-                            ind_20cross = find_last(diff_20pc, tofind = 0)
-                        elif event_direction is -1:
-                            ind_80cross = find_last(diff_80pc, tofind = 1)
-                            ind_20cross = find_last(diff_20pc, tofind = 1)
-                                                    
-                        if ind_20cross > ind_80cross or ind_80cross == 0:                   
-                            ind_80cross = np.int32(1)
-                            ind_20cross = np.int32(0)                        
-                        
-                        val_80cross = analog_smoothed[trial, ind_80cross]                    
-                        val_20cross = analog_smoothed[trial, ind_20cross]
-                        
-                        
-                        slope_8020_line = (val_80cross - val_20cross) / (ind_80cross - ind_20cross)
-                        
-                        vals_8020_line = np.zeros(len(analog_smoothed[trial, 0:ind_80cross + 1]))
-                        vals_8020_line = [(val_80cross - (ind_80cross - i)*slope_8020_line) for i in range(ind_80cross)]
-                        
-                        vals_baseline = baseline[neuron][trial,stim,0] * np.ones(len(analog_smoothed[trial, 0:ind_80cross]))
-                        #diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_smoothed[trial, 0:ind_80cross] - vals_8020_line) ** 2
-                        diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_presmoothed_input[trial, 0:ind_80cross] - vals_8020_line) ** 2
-                                                
-                        intercept_8020_ind = np.argmin(diff_sq_8020_line)
-                        
-                        event_time_index = intercept_8020_ind + PSE_search_lower_thistrial
-                        stim_time_index = stim_on[neuron][stim]
-                        postsynaptic_event_latency[neuron][trial,stim,0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
-                        postsynaptic_event_latency[neuron][trial,stim,1] = event_time_index                  
-                            
-    self.height =  postsynaptic_event 
-    self.latency = postsynaptic_event_latency
-    self.baseline = baseline
-#        self.upslope = 
-    
-    print('\nAdded height. \nAdded latency. \nAdded baseline.')              
-                                                   
-                                           
-    return
+#
+#@jit
+#def add_ampli_core(analog_signals, stim_on, times, event_direction = 'up',
+#                                   baseline_lower = 4, baseline_upper = 0.2, 
+#                                   PSE_search_lower = 5, PSE_search_upper = 30,
+#                                   smoothing_width = False, latency_method = 'max_height'):
+#                                       
+#    #Determine direction of postsynaptic events
+#    if event_direction is 'up' :
+#        event_direction = 1
+#    if event_direction is 'down':
+#        event_direction = -1
+#             
+#    #Initialize classes for storing new variables associated with postsynaptic events   
+#    num_neurons = len(analog_signals)
+#    baseline = np.empty(num_neurons, dtype = np.ndarray)
+#    postsynaptic_event = np.empty(num_neurons, dtype = pd.DataFrame)
+#    postsynaptic_event_latency = np.empty(num_neurons, dtype = pd.DataFrame)
+#
+#
+#    #Iterate through neurons
+#    for neuron in range(num_neurons):
+#        num_trials = len(analog_signals[neuron])    #Define size of trials and stims
+#
+#        for trial in range(num_trials):
+#            num_stims = len(stim_on[neuron][trial])
+#            
+#            #Find sampling rate and size of smoothing kernel
+#            sample_rate = np.int32(np.round(1 / (times[neuron][1] - times[neuron][0])))   
+#            if smoothing_width == False:
+#                smoothing_width = 2
+#                smoothing_width_ind = np.int32(smoothing_width * sample_rate / 1000) + 1
+#            else:
+#                smoothing_width_ind = np.int32(smoothing_width * (sample_rate / 1000)) + 1
+#    
+#                                                   
+#            #convert baseline and PSE search bounds to indices                
+#            baseline_lower_index = np.int32(baseline_lower * sample_rate / 1000)
+#            baseline_upper_index = np.int32(baseline_upper * sample_rate / 1000)
+#        
+#            PSE_search_lower_index = np.int32(PSE_search_lower * sample_rate / 1000)
+#            PSE_search_upper_index = np.int32(PSE_search_upper * sample_rate / 1000)     
+#    
+#            baseline[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
+#            postsynaptic_event[neuron] = np.empty([num_trials, num_stims, 4], dtype = np.ndarray)
+#            postsynaptic_event_latency[neuron] = np.empty([num_trials, num_stims, 2], dtype = np.ndarray)
+#            
+#    
+#            #postsynaptic_event[neuron][trial, stim, b], 
+#                #b = 0: index of max, b = 1: val of max, b = 2: normalized val of max
+#                #b = 3: latency
+#    
+#            for stim in range(num_stims):   
+#                baseline_lower_thistrial = np.int32(stim_on[neuron][stim] - baseline_lower_index)
+#                baseline_upper_thistrial = np.int32(stim_on[neuron][stim] - baseline_upper_index)
+#                
+#                PSE_search_lower_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_lower_index)
+#                PSE_search_upper_thistrial = np.int32(stim_on[neuron][stim] + PSE_search_upper_index) 
+#        
+#                #calculate mean baseline for this trial, stim. Store in baseline[neuron][trial][stim, 0]
+#                #baseline[neuron][trial][stim, 1] stores stdev.
+#                for trial in range(num_trials):
+#        
+#                    baseline[neuron][trial, stim, 0] = np.mean(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])
+#                    baseline[neuron][trial, stim, 1] = np.std(analog_signals[neuron][trial, baseline_lower_thistrial:baseline_upper_thistrial])              
+#                
+#                #Use boxcar-moving-avg to smooth analog signal. Calculate this in analog_smoothed
+#                #and the derivative in 
+#                
+#                analog_presmoothed_input = analog_signals[neuron][:, PSE_search_lower_thistrial:PSE_search_upper_thistrial]              
+#                analog_smoothed = sp_signal.savgol_filter(analog_presmoothed_input, smoothing_width_ind, 3)
+#            
+#                #calculate max PSE height [stim,0] and its index [stim,1] for this trial, stim
+#                if event_direction == 1:
+#                    postsynaptic_event[neuron][:, stim, 1] = np.argmax(analog_smoothed, axis = -1)
+#                elif event_direction == -1:
+#                    postsynaptic_event[neuron][:, stim, 1] = np.argmin(analog_smoothed, axis = -1)
+#                #correct index back to analog_signal reference
+#                postsynaptic_event[neuron][:, stim, 1] += PSE_search_lower_thistrial                        
+#                postsynaptic_event[neuron][:, stim, 0] = [analog_signals[neuron][i, np.int32(postsynaptic_event[neuron][i,stim,1])] for i in range(num_trials)]
+#                postsynaptic_event[neuron][:, stim, 0] -=  baseline[neuron][:, stim, 0]      #correct EPSP val by subtracting baseline measurement               
+#                #store time of max_height latency in [stim,2]
+#                postsynaptic_event[neuron][:, stim, 2] =  [times[neuron][np.int32(postsynaptic_event[neuron][trial][stim,1])] - times[neuron][np.int32(stim_on[neuron][stim])] for trial in range(num_trials)]
+#        
+#                #derivative calcs. Go to trial indexing due to uneven size of arays from stim-on to max-height.
+#                for trial in range(num_trials):
+#                    max_height_smoothed_ind = np.int32(postsynaptic_event[neuron][trial,stim,1] - PSE_search_lower_thistrial)
+#    
+#                    if max_height_smoothed_ind < 2:
+#                        max_height_smoothed_ind = 2
+#                    analog_smoothed_deriv = np.gradient(analog_smoothed[trial, 0:max_height_smoothed_ind])
+#        
+#                    if event_direction == 1:
+#                        max_deriv_ind = np.argmax(analog_smoothed_deriv)
+#                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
+#                    elif event_direction == -1:
+#                        max_deriv_ind = np.argmin(analog_smoothed_deriv)
+#                        postsynaptic_event[neuron][:, stim, 3] = analog_smoothed_deriv[max_deriv_ind] * (sample_rate/1000)                   
+#            
+#            
+#                    #Based on latency_method, determine latency and store in postsynaptic_event_latency
+#                    if latency_method == 'max_height': 
+#                        event_time_index = np.int32(postsynaptic_event[neuron][trial, stim, 1])
+#                        stim_time_index = np.int32(stim_on[neuron][stim])
+#                        
+#                        postsynaptic_event_latency[neuron][trial, stim,0] =  times[neuron][event_time_index] - times[neuron][stim_time_index]
+#                        postsynaptic_event_latency[neuron][trial, stim,1] = postsynaptic_event[neuron][trial, stim, 1]
+#            
+#                    elif latency_method == 'max_slope':     
+#                        event_time_index = np.int32(max_deriv_ind + PSE_search_lower_thistrial)
+#                        stim_time_index = np.int32(stim_on[neuron][stim])
+#            
+#                        postsynaptic_event_latency[neuron][trial, stim, 0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
+#                        postsynaptic_event_latency[neuron][trial, stim, 1] = event_time_index                  
+#                        
+#                    elif latency_method == 'baseline_plus_4sd':                 
+#                        signal_base_diff = ((analog_smoothed[trial,0:max_height_smoothed_ind] - (baseline[neuron][trial, stim, 0] + 4 * baseline[neuron][trial, stim, 1])) ** 2 ) > 0
+#                        signal_base_min_ind = inifind_last(signal_base_diff, tofind = 0)
+#                        postsynaptic_event_latency[neuron][trial, stim,0] = times[neuron][signal_base_min_ind + PSE_search_lower_index]
+#                        postsynaptic_event_latency[neuron][trial, stim,1] = signal_base_min_ind + PSE_search_lower_index
+#                              
+#                    elif latency_method == '80_20_line':
+#                        value_80pc = 0.8 * (postsynaptic_event[neuron][trial,stim,0]) + baseline[neuron][trial,stim,0]         
+#                        value_20pc = 0.2 * (postsynaptic_event[neuron][trial,stim,0]) + baseline[neuron][trial,stim,0]         
+#                        value_80pc_sizeanalog =  value_80pc * np.ones(len(analog_smoothed[trial, 0:max_height_smoothed_ind]))                   
+#                        value_20pc_sizeanalog =  value_20pc * np.ones(len(analog_smoothed[trial, 0:max_height_smoothed_ind]))                   
+#                 
+#    #                        diff_80pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
+#    #                        diff_20pc = (analog_smoothed[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
+#                        diff_80pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_80pc_sizeanalog) > 0
+#                        diff_20pc = (analog_presmoothed_input[trial, 0:max_height_smoothed_ind] - value_20pc_sizeanalog) > 0
+#    
+#                        
+#                        if event_direction is 1:
+#                            ind_80cross = find_last(diff_80pc, tofind = 0)
+#                            ind_20cross = find_last(diff_20pc, tofind = 0)
+#                        elif event_direction is -1:
+#                            ind_80cross = find_last(diff_80pc, tofind = 1)
+#                            ind_20cross = find_last(diff_20pc, tofind = 1)
+#                                                    
+#                        if ind_20cross > ind_80cross or ind_80cross == 0:                   
+#                            ind_80cross = np.int32(1)
+#                            ind_20cross = np.int32(0)                        
+#                        
+#                        val_80cross = analog_smoothed[trial, ind_80cross]                    
+#                        val_20cross = analog_smoothed[trial, ind_20cross]
+#                        
+#                        
+#                        slope_8020_line = (val_80cross - val_20cross) / (ind_80cross - ind_20cross)
+#                        
+#                        vals_8020_line = np.zeros(len(analog_smoothed[trial, 0:ind_80cross + 1]))
+#                        vals_8020_line = [(val_80cross - (ind_80cross - i)*slope_8020_line) for i in range(ind_80cross)]
+#                        
+#                        vals_baseline = baseline[neuron][trial,stim,0] * np.ones(len(analog_smoothed[trial, 0:ind_80cross]))
+#                        #diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_smoothed[trial, 0:ind_80cross] - vals_8020_line) ** 2
+#                        diff_sq_8020_line = (vals_baseline - vals_8020_line) ** 2 + (analog_presmoothed_input[trial, 0:ind_80cross] - vals_8020_line) ** 2
+#                                                
+#                        intercept_8020_ind = np.argmin(diff_sq_8020_line)
+#                        
+#                        event_time_index = intercept_8020_ind + PSE_search_lower_thistrial
+#                        stim_time_index = stim_on[neuron][stim]
+#                        postsynaptic_event_latency[neuron][trial,stim,0] = times[neuron][event_time_index] - times[neuron][stim_time_index]               
+#                        postsynaptic_event_latency[neuron][trial,stim,1] = event_time_index                  
+#                            
+#    self.height =  postsynaptic_event 
+#    self.latency = postsynaptic_event_latency
+#    self.baseline = baseline
+##        self.upslope = 
+#    
+#    print('\nAdded height. \nAdded latency. \nAdded baseline.')              
+#                                                   
+#                                           
+#    return
 
         
         
