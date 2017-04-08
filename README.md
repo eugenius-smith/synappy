@@ -32,8 +32,9 @@ The main dependencies are: numpy, scipy, matplotlib, bokeh and neo (ver 0.4+ rec
 
 
 
-
----Typical usage---:
+#################
+EXAMPLES OF USAGE:
+#################
 
     import synappy as syn
 
@@ -81,8 +82,9 @@ The main dependencies are: numpy, scipy, matplotlib, bokeh and neo (ver 0.4+ rec
             #The raw data behind each attribute can be fetched this way.
 
 
-
----Plotting tools---:
+##############################
+PLOTTING AND VISUALIZATION TOOLS
+##############################
 
     syn.plot_finds(event1, neuron, trial, starttime, endtime)
             #Plots the detected spontaneous events using the bokeh plotting tool, which generates an interactive html-based 
@@ -126,8 +128,9 @@ The main dependencies are: numpy, scipy, matplotlib, bokeh and neo (ver 0.4+ rec
         #dim2: 1->mean, 2->std, 3->sterr, 4->success_rate_mean, 5->success_rate_stdev
         #eg if byneuron = True, out[neuron, 3] would give sterr for that neuron, calculated by pooling across all trials/stims.
     
-
----Useful methods on the synwrapper class---:
+#############################################
+USEFUL METHODS ON THE SYNWRAPPER CLASS
+#############################################
 
     synwrapper.propagate_mask(): #propagate synwrapper.mask through to all other attributes.
     synwrapper.add_heights() #adds .height and .latency
