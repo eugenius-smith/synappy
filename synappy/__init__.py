@@ -123,6 +123,10 @@ Data is automatically filtered in two ways:
 
 """
 
+#%% IMPORT MODULES
+
+#test change
+
 import neo
 import numpy as np
 import scipy as sp
@@ -138,19 +142,44 @@ from bokeh import mpl
 import bokeh
 
 
-
-
+#%% DEFINE SYNWRAPPER CLASS
 
 ###Define synwrapper: A wrapper for synaptic event attributes (eg height, latency) from one dataset.
 class synwrapper(object):
     def __init__(self):
+        
+        """
+        self.analog_signals = None
+        self.stim_on = None
+        self.times = None
+        self.height = None
+        self.latency = None
+        self.baseline = None
+        self.mask = None
+        self.height_fails = None
+        self.height_norm = None
+        self.success_rate = None
+        self.decay = None
+        """
+        
         pass
     
     def add_ampli(self, event_direction = 'up',
                                        baseline_lower = 4, baseline_upper = 0.2, 
                                        PSE_search_lower = 5, PSE_search_upper = 30,
                                        smoothing_width = False, latency_method = 'max_height'):
-
+        
+        # Check for correct input.
+        try:
+            assert event_direction in ['up', 'down']
+        except AssertionError:
+            raise ValueError('event_direction must be "up" or "down".')
+            
+        try:
+            assert latency_method in ['max_height', 'max_slope', 'baseline_plus_4sd', '80_20_line']
+        except AssertionError:
+            raise ValueError('latency_method must be one of the following: max_height, max_slope, baseline_plus_4sd, 80_20_line.')
+        
         ##------Setup-------#
 
         #Load variables from synappy                                       
@@ -444,7 +473,17 @@ class synwrapper(object):
          return
          
     
+    # Seems not to have been fully implemented.
     def pool(self, name, pool_index = 0, mask = 'suc'):
+        
+        raise NotImplementedError
+        
+        # Check for correct input.
+        try:
+            assert mask in ['suc', 'all']
+        except AssertionError:
+            raise ValueError('mask must be either "suc" or "all".')
+        
         if type(name) is str:
             postsynaptic_event = self.__getattribute__(name)
         else:
